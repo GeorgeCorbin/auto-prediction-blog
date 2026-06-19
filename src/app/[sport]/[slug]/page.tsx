@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/db';
@@ -185,11 +186,29 @@ function SidebarStoryItem({
 function RelatedCard({
   article,
 }: {
-  article: { id: string; title: string; sport: string; slug: string; publishedAt: Date };
+  article: {
+    id: string;
+    title: string;
+    sport: string;
+    slug: string;
+    publishedAt: Date;
+    featuredImageUrl: string | null;
+    imageAlt: string | null;
+  };
 }) {
   return (
     <Link href={`/${article.sport}/${article.slug}`} className="group block">
-      <div className="w-full bg-[#D1D5DB] mb-3" style={{ aspectRatio: '4/3' }} />
+      <div className="relative w-full bg-[#D1D5DB] mb-3" style={{ aspectRatio: '4/3' }}>
+        {article.featuredImageUrl && (
+          <Image
+            src={article.featuredImageUrl}
+            alt={article.imageAlt ?? article.title}
+            fill
+            style={{ objectFit: 'cover' }}
+            sizes="(max-width: 640px) 100vw, 33vw"
+          />
+        )}
+      </div>
       <div className="flex items-center gap-2 mb-1.5">
         <span className="inline-flex items-center bg-[#FEF3EE] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#FF6B2C] rounded-sm">
           {article.sport.toUpperCase()}
@@ -222,13 +241,29 @@ export default async function ArticlePage({ params }: Props) {
   const game = article.game!;
 
   // Related articles
-  let related: { id: string; title: string; sport: string; slug: string; publishedAt: Date }[] = [];
+  let related: {
+    id: string;
+    title: string;
+    sport: string;
+    slug: string;
+    publishedAt: Date;
+    featuredImageUrl: string | null;
+    imageAlt: string | null;
+  }[] = [];
   try {
     related = await prisma.article.findMany({
       where: { sport, slug: { not: slug } },
       orderBy: { publishedAt: 'desc' },
       take: 3,
-      select: { id: true, title: true, sport: true, slug: true, publishedAt: true },
+      select: {
+        id: true,
+        title: true,
+        sport: true,
+        slug: true,
+        publishedAt: true,
+        featuredImageUrl: true,
+        imageAlt: true,
+      },
     });
   } catch { /* ignore */ }
 
@@ -343,11 +378,32 @@ export default async function ArticlePage({ params }: Props) {
               </div>
             </header>
 
-            {/* Featured image placeholder */}
-            <div className="w-full bg-[#D1D5DB] mb-2" style={{ aspectRatio: '16/7' }} />
-            <p className="text-[11px] text-[#9CA3AF] mb-6">
-              {game.awayTeam} vs {game.homeTeam} · {gameDate} · Photo: Getty Images
-            </p>
+            {/* Featured image */}
+            {article.featuredImageUrl ? (
+              <>
+                <div className="relative w-full mb-2" style={{ aspectRatio: '16/7' }}>
+                  <Image
+                    src={article.featuredImageUrl}
+                    alt={article.imageAlt ?? `${game.awayTeam} vs ${game.homeTeam}`}
+                    fill
+                    style={{ objectFit: 'cover' }}
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 75vw, 900px"
+                    priority
+                  />
+                </div>
+                <p className="text-[11px] text-[#9CA3AF] mb-6">
+                  {game.awayTeam} vs {game.homeTeam} · {gameDate}
+                  {article.imageCredit ? ` · Photo: ${article.imageCredit}` : ''}
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="w-full bg-[#D1D5DB] mb-2" style={{ aspectRatio: '16/7' }} />
+                <p className="text-[11px] text-[#9CA3AF] mb-6">
+                  {game.awayTeam} vs {game.homeTeam} · {gameDate}
+                </p>
+              </>
+            )}
 
             {/* Intro paragraph with left accent */}
             {paragraphs[0] && (

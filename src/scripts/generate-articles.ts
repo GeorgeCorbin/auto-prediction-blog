@@ -6,6 +6,7 @@ import { generateArticle } from '@/lib/ai/generator';
 import { MlbGameContext } from '@/lib/ai/prompts/mlb';
 import { isStatsPickWithoutOddsEnabled } from '@/lib/feature-flags';
 import { resolveMlbPick } from '@/lib/picks/mlb';
+import { fetchEspnVenueImage } from '@/lib/espn/client';
 
 function buildSlug(
   awayTeamAbbr: string,
@@ -98,7 +99,10 @@ export async function generateArticles(): Promise<void> {
     };
 
     try {
-      const result = await generateArticle(sportConfig, context);
+      const [result, venueImage] = await Promise.all([
+        generateArticle(sportConfig, context),
+        fetchEspnVenueImage(game.espnEventId, sportConfig, game.awayTeam, game.homeTeam),
+      ]);
       const slug = buildSlug(game.awayTeamAbbr, game.homeTeamAbbr, game.scheduledAt);
 
       await prisma.article.upsert({
@@ -112,12 +116,18 @@ export async function generateArticles(): Promise<void> {
           pick: result.pick,
           sport: game.sport,
           publishedAt: new Date(),
+          featuredImageUrl: venueImage.imageUrl,
+          imageAlt: venueImage.imageAlt,
+          imageCredit: venueImage.imageCredit,
         },
         update: {
           title: result.title,
           metaDescription: result.metaDescription,
           content: result.content,
           pick: result.pick,
+          featuredImageUrl: venueImage.imageUrl,
+          imageAlt: venueImage.imageAlt,
+          imageCredit: venueImage.imageCredit,
         },
       });
 

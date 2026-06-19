@@ -48,15 +48,18 @@ model Game {
 }
 
 model Article {
-  id              String   @id @default(cuid())
-  gameId          String   @unique
-  slug            String   @unique
-  title           String
-  metaDescription String
-  content         String   @db.Text
-  pick            String   // e.g. "Dodgers -1.5"
-  sport           String
-  publishedAt     DateTime @default(now())
+  id                String   @id @default(cuid())
+  gameId            String   @unique
+  slug              String   @unique
+  title             String
+  metaDescription   String
+  content           String   @db.Text
+  pick              String   // e.g. "Dodgers -1.5"
+  sport             String
+  publishedAt       DateTime @default(now())
+  featuredImageUrl  String?
+  imageAlt          String?
+  imageCredit       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

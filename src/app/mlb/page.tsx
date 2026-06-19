@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { prisma } from '@/lib/db';
@@ -57,7 +58,17 @@ function ArticleListRow({ article }: { article: ArticleWithGame }) {
       className="group flex gap-5 py-5 border-b border-[#E5E7EB] last:border-0 items-start"
     >
       {/* Image thumbnail */}
-      <div className="hidden sm:block w-[100px] h-[72px] bg-[#D1D5DB] shrink-0" />
+      <div className="relative hidden sm:block w-[100px] h-[72px] bg-[#D1D5DB] shrink-0 overflow-hidden">
+        {article.featuredImageUrl && (
+          <Image
+            src={article.featuredImageUrl}
+            alt={article.imageAlt ?? article.title}
+            fill
+            style={{ objectFit: 'cover' }}
+            sizes="100px"
+          />
+        )}
+      </div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
@@ -197,7 +208,17 @@ function FeaturedCard({ article }: { article: ArticleWithGame }) {
   const game = article.game;
   return (
     <Link href={`/mlb/${article.slug}`} className="group block">
-      <div className="w-full bg-[#D1D5DB] mb-3" style={{ aspectRatio: '4/3' }} />
+      <div className="relative w-full bg-[#D1D5DB] mb-3 overflow-hidden" style={{ aspectRatio: '4/3' }}>
+        {article.featuredImageUrl && (
+          <Image
+            src={article.featuredImageUrl}
+            alt={article.imageAlt ?? article.title}
+            fill
+            style={{ objectFit: 'cover' }}
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 33vw, 280px"
+          />
+        )}
+      </div>
       <div className="flex items-center gap-2 mb-1.5">
         <span className="inline-flex items-center bg-[#FEF3EE] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#FF6B2C] rounded-sm">
           MLB

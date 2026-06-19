@@ -150,8 +150,87 @@ function parseEvent(event: z.infer<typeof EventSchema>): EspnGame | null {
 }
 
 // ---------------------------------------------------------------------------
+// Venue image schemas
+// ---------------------------------------------------------------------------
+
+const VenueImageSchema = z.object({
+  href: z.string().optional(),
+});
+
+const VenueSchema = z.object({
+  fullName: z.string().optional(),
+  images: z.array(VenueImageSchema).optional(),
+});
+
+const GameInfoSchema = z.object({
+  venue: VenueSchema.optional(),
+});
+
+const SummaryResponseSchema = z.object({
+  gameInfo: GameInfoSchema.optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+export interface EspnVenueImage {
+  imageUrl: string | null;
+  imageAlt: string;
+  imageCredit: string;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/**
+ * Fetches venue image data from the ESPN game summary API.
+ * Returns null imageUrl on any error — never throws.
+ */
+export async function fetchEspnVenueImage(
+  espnEventId: string,
+  sport: SportConfig,
+  awayTeam: string,
+  homeTeam: string,
+): Promise<EspnVenueImage> {
+  const url = `http://site.api.espn.com/apis/site/v2/sports/${sport.espnSport}/${sport.espnLeague}/summary`;
+  const fallback: EspnVenueImage = {
+    imageUrl: null,
+    imageAlt: `${awayTeam} at ${homeTeam}`,
+    imageCredit: 'ESPN',
+  };
+
+  let data: unknown;
+  try {
+    const response = await axios.get(url, {
+      params: { event: espnEventId },
+      timeout: 15_000,
+    });
+    data = response.data;
+  } catch (err) {
+    console.warn(`[espn-client] Failed to fetch summary for event ${espnEventId}:`, err);
+    return fallback;
+  }
+
+  const parsed = SummaryResponseSchema.safeParse(data);
+  if (!parsed.success) {
+    console.warn(`[espn-client] Unexpected summary shape for event ${espnEventId}:`, parsed.error.issues);
+    return fallback;
+  }
+
+  const venue = parsed.data.gameInfo?.venue;
+  const imageUrl = venue?.images?.[0]?.href ?? null;
+  const venueName = venue?.fullName ?? '';
+
+  return {
+    imageUrl,
+    imageAlt: venueName
+      ? `${venueName} — ${awayTeam} at ${homeTeam}`
+      : `${awayTeam} at ${homeTeam}`,
+    imageCredit: 'ESPN',
+  };
+}
 
 /**
  * Fetches ESPN scoreboard for the given sport and one or more YYYYMMDD date strings.

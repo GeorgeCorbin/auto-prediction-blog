@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { SiteHeader } from '@/components/SiteHeader';
@@ -67,8 +68,17 @@ function FeaturedCard({ article }: { article: ArticleWithGame }) {
   const game = article.game;
   return (
     <Link href={`/${article.sport}/${article.slug}`} className="group block">
-      {/* Image placeholder */}
+      {/* Featured image */}
       <div className="relative w-full bg-[#D1D5DB] overflow-hidden" style={{ aspectRatio: '16/7' }}>
+        {article.featuredImageUrl && (
+          <Image
+            src={article.featuredImageUrl}
+            alt={article.imageAlt ?? article.title}
+            fill
+            style={{ objectFit: 'cover' }}
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 65vw, 800px"
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
         <div className="absolute bottom-4 left-5 flex items-center gap-2">
           <SportTag sport={article.sport} />
@@ -97,10 +107,17 @@ function GridCard({ article }: { article: ArticleWithGame }) {
   const game = article.game;
   return (
     <Link href={`/${article.sport}/${article.slug}`} className="group block">
-      <div
-        className="w-full bg-[#D1D5DB] mb-3"
-        style={{ aspectRatio: '4/3' }}
-      />
+      <div className="relative w-full bg-[#D1D5DB] mb-3" style={{ aspectRatio: '4/3' }}>
+        {article.featuredImageUrl && (
+          <Image
+            src={article.featuredImageUrl}
+            alt={article.imageAlt ?? article.title}
+            fill
+            style={{ objectFit: 'cover' }}
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 240px"
+          />
+        )}
+      </div>
       <div className="flex items-center gap-2 mb-2">
         <SportTag sport={article.sport} />
         <span className="text-[11px] text-[#9CA3AF]">
@@ -156,9 +173,17 @@ function CompactRow({ article }: { article: ArticleWithGame }) {
       href={`/${article.sport}/${article.slug}`}
       className="group flex items-start gap-3 py-3 border-b border-[#E5E7EB] last:border-0"
     >
-      <div
-        className="w-[80px] h-[58px] bg-[#D1D5DB] shrink-0"
-      />
+      <div className="relative w-[80px] h-[58px] bg-[#D1D5DB] shrink-0 overflow-hidden">
+        {article.featuredImageUrl && (
+          <Image
+            src={article.featuredImageUrl}
+            alt={article.imageAlt ?? article.title}
+            fill
+            style={{ objectFit: 'cover' }}
+            sizes="80px"
+          />
+        )}
+      </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 mb-1">
           <SportTag sport={article.sport} />
