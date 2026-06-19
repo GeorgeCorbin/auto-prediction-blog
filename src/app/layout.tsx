@@ -24,6 +24,8 @@ export const metadata: Metadata = {
     'Expert MLB predictions, odds analysis, and game previews. Daily picks backed by stats, probable pitchers, and betting line value.',
 };
 
+const gaId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -46,6 +48,23 @@ export default function RootLayout({
           crossOrigin="anonymous"
           strategy="afterInteractive"
         />
+        {gaId ? (
+          <>
+            <Script
+              async
+              src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}
+              strategy="afterInteractive"
+            />
+            <Script id="google-analytics" strategy="afterInteractive">
+              {`
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', '${gaId}');
+              `}
+            </Script>
+          </>
+        ) : null}
       </head>
       <body className="min-h-full flex flex-col bg-white text-[#1A1A1A]">{children}</body>
     </html>
