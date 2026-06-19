@@ -1,0 +1,65 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum GameStatus {
+  SCHEDULED
+  READY
+  PUBLISHED
+  SKIPPED
+}
+
+model Game {
+  id            String     @id @default(cuid())
+  espnEventId   String     @unique
+  homeTeam      String
+  awayTeam      String
+  homeTeamAbbr  String
+  awayTeamAbbr  String
+  scheduledAt   DateTime
+  sport         String     // e.g. "mlb"
+  status        GameStatus @default(SCHEDULED)
+
+  // Odds (from external odds provider)
+  spread        Float?
+  moneylineHome Int?
+  moneylineAway Int?
+  total         Float?
+
+  // Pitchers / game-specific info
+  homePitcher      String?
+  awayPitcher      String?
+  homePitcherStats Json?
+  awayPitcherStats Json?
+
+  // Team season stats (from ESPN)
+  homeStats Json?
+  awayStats Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  article Article?
+}
+
+model Article {
+  id              String   @id @default(cuid())
+  gameId          String   @unique
+  slug            String   @unique
+  title           String
+  metaDescription String
+  content         String   @db.Text
+  pick            String   // e.g. "Dodgers -1.5"
+  sport           String
+  publishedAt     DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  game Game @relation(fields: [gameId], references: [id])
+}
