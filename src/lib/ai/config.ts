@@ -29,7 +29,7 @@ export const aiPresets = {
   },
   claude: {
     provider: 'anthropic',
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-haiku-4-5-20251001',
     temperature: 0.7,
   },
 } as const satisfies Record<string, AiPreset>;

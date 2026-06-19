@@ -60,6 +60,8 @@ model Article {
   featuredImageUrl  String?
   imageAlt          String?
   imageCredit       String?
+  author            String?
+  viewCount         Int      @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

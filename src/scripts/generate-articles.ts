@@ -6,7 +6,8 @@ import { generateArticle } from '@/lib/ai/generator';
 import { MlbGameContext } from '@/lib/ai/prompts/mlb';
 import { isStatsPickWithoutOddsEnabled } from '@/lib/feature-flags';
 import { resolveMlbPick } from '@/lib/picks/mlb';
-import { fetchEspnVenueImage } from '@/lib/espn/client';
+import { pickAuthorForGame } from '@/lib/authors';
+import { fetchEspnGameSummary } from '@/lib/espn/client';
 
 function buildSlug(
   awayTeamAbbr: string,
@@ -99,11 +100,24 @@ export async function generateArticles(): Promise<void> {
     };
 
     try {
-      const [result, venueImage] = await Promise.all([
+      const [result, summary] = await Promise.all([
         generateArticle(sportConfig, context),
-        fetchEspnVenueImage(game.espnEventId, sportConfig, game.awayTeam, game.homeTeam),
+        fetchEspnGameSummary(game.espnEventId, sportConfig, game.awayTeam, game.homeTeam),
       ]);
+      const { venueImage, homePitcherStats: richHome, awayPitcherStats: richAway } = summary;
       const slug = buildSlug(game.awayTeamAbbr, game.homeTeamAbbr, game.scheduledAt);
+      const author = pickAuthorForGame(game.homeTeamAbbr, game.awayTeamAbbr, slug);
+
+      // Update Game with richer pitcher stats from summary if available
+      if (richHome || richAway) {
+        await prisma.game.update({
+          where: { id: game.id },
+          data: {
+            ...(richHome ? { homePitcherStats: richHome as unknown as import('@prisma/client').Prisma.InputJsonValue } : {}),
+            ...(richAway ? { awayPitcherStats: richAway as unknown as import('@prisma/client').Prisma.InputJsonValue } : {}),
+          },
+        });
+      }
 
       await prisma.article.upsert({
         where: { slug },
@@ -116,6 +130,7 @@ export async function generateArticles(): Promise<void> {
           pick: result.pick,
           sport: game.sport,
           publishedAt: new Date(),
+          author,
           featuredImageUrl: venueImage.imageUrl,
           imageAlt: venueImage.imageAlt,
           imageCredit: venueImage.imageCredit,

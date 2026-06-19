@@ -8,7 +8,7 @@ import type { AiPresetName } from '@/lib/ai/config';
 // ─── AI Model ─────────────────────────────────────────────────────────────────
 //
 //  'production'  OpenAI GPT-4o          → needs OPENAI_API_KEY in .env
-//  'claude'      Anthropic Claude Sonnet → needs ANTHROPIC_API_KEY in .env
+//  'claude'      Anthropic Claude Haiku 4.5 → needs ANTHROPIC_API_KEY in .env
 //  'local'       Ollama on your machine  → no API key needed, run: ollama serve
 //
 export const aiModel: AiPresetName = 'local';

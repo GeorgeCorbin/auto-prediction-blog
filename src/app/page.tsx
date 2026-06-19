@@ -1,6 +1,8 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { getArticleAuthor } from '@/lib/authors';
 import { prisma } from '@/lib/db';
+import { MatchupImage } from '@/components/MatchupImage';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
 import { AdSlot } from '@/components/AdSlot';
@@ -66,16 +68,24 @@ function SectionHeading({ children, href }: { children: React.ReactNode; href?: 
 /* ─── Featured hero card ─────────────────────────────────────── */
 function FeaturedCard({ article }: { article: ArticleWithGame }) {
   const game = article.game;
+  const authorName = getArticleAuthor(article, game);
   return (
     <Link href={`/${article.sport}/${article.slug}`} className="group block">
       {/* Featured image */}
-      <div className="relative w-full bg-[#D1D5DB] overflow-hidden" style={{ aspectRatio: '16/7' }}>
-        {article.featuredImageUrl && (
+      <div className="relative w-full overflow-hidden" style={{ aspectRatio: '16/9' }}>
+        {article.featuredImageUrl ? (
           <Image
             src={article.featuredImageUrl}
             alt={article.imageAlt ?? article.title}
             fill
             style={{ objectFit: 'cover' }}
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 65vw, 800px"
+          />
+        ) : (
+          <MatchupImage
+            slug={article.slug}
+            alt={article.imageAlt ?? article.title}
+            wide
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 65vw, 800px"
           />
         )}
@@ -90,8 +100,8 @@ function FeaturedCard({ article }: { article: ArticleWithGame }) {
           {article.title}
         </h2>
         <div className="flex items-center gap-3 mb-3 text-[12px] text-[#9CA3AF]">
-          <span>By The Matchup Report Staff</span>
-          <span>·</span>
+          {authorName && <span>By {authorName}</span>}
+          {authorName && <span>·</span>}
           <span>{timeAgo(article.publishedAt)}</span>
         </div>
         <p className="text-[15px] text-[#4B5563] leading-relaxed line-clamp-2">
@@ -105,15 +115,22 @@ function FeaturedCard({ article }: { article: ArticleWithGame }) {
 /* ─── Article grid card ──────────────────────────────────────── */
 function GridCard({ article }: { article: ArticleWithGame }) {
   const game = article.game;
+  const authorName = getArticleAuthor(article, game);
   return (
     <Link href={`/${article.sport}/${article.slug}`} className="group block">
-      <div className="relative w-full bg-[#D1D5DB] mb-3" style={{ aspectRatio: '4/3' }}>
-        {article.featuredImageUrl && (
+      <div className="relative w-full mb-3 overflow-hidden" style={{ aspectRatio: '4/3' }}>
+        {article.featuredImageUrl ? (
           <Image
             src={article.featuredImageUrl}
             alt={article.imageAlt ?? article.title}
             fill
             style={{ objectFit: 'cover' }}
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 240px"
+          />
+        ) : (
+          <MatchupImage
+            slug={article.slug}
+            alt={article.imageAlt ?? article.title}
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 240px"
           />
         )}
@@ -128,8 +145,7 @@ function GridCard({ article }: { article: ArticleWithGame }) {
         {article.title}
       </h3>
       <div className="flex items-center gap-2 text-[11px] text-[#9CA3AF]">
-        <span>The Matchup Report</span>
-        <span>·</span>
+        {authorName && <><span>{authorName}</span><span>·</span></>}
         <span>{timeAgo(article.publishedAt)}</span>
       </div>
     </Link>
@@ -168,18 +184,25 @@ function SidebarItem({
 
 /* ─── Compact list row ───────────────────────────────────────── */
 function CompactRow({ article }: { article: ArticleWithGame }) {
+  const game = article.game;
   return (
     <Link
       href={`/${article.sport}/${article.slug}`}
       className="group flex items-start gap-3 py-3 border-b border-[#E5E7EB] last:border-0"
     >
-      <div className="relative w-[80px] h-[58px] bg-[#D1D5DB] shrink-0 overflow-hidden">
-        {article.featuredImageUrl && (
+      <div className="relative w-[80px] h-[58px] shrink-0 overflow-hidden">
+        {article.featuredImageUrl ? (
           <Image
             src={article.featuredImageUrl}
             alt={article.imageAlt ?? article.title}
             fill
             style={{ objectFit: 'cover' }}
+            sizes="80px"
+          />
+        ) : (
+          <MatchupImage
+            slug={article.slug}
+            alt={article.imageAlt ?? article.title}
             sizes="80px"
           />
         )}
@@ -258,9 +281,9 @@ export default async function HomePage() {
 
             {/* Two-column: compact articles + trending */}
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-10">
-              {/* Best Bets list */}
+              {/* Latest Predictions list */}
               <section>
-                <SectionHeading href="/mlb">Best Bets</SectionHeading>
+                <SectionHeading href="/mlb">Best Predictions</SectionHeading>
                 {compactArticles.length > 0 ? (
                   <div>
                     {compactArticles.map((article) => (

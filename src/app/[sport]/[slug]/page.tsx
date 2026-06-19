@@ -2,8 +2,11 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { getArticleAuthor, getAuthorInitials } from '@/lib/authors';
 import { prisma } from '@/lib/db';
 import { AdSlot } from '@/components/AdSlot';
+import { ArticleViewTracker } from '@/components/ArticleViewTracker';
+import { MatchupImage } from '@/components/MatchupImage';
 import { LocalPublishedTime } from '@/components/LocalPublishedTime';
 import { ShareButtons } from '@/components/ShareButtons';
 import { SiteHeader } from '@/components/SiteHeader';
@@ -34,7 +37,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       include: { game: true },
     });
     if (!article || article.sport !== sport) return { title: 'Article Not Found' };
-    const canonicalUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/${sport}/${slug}`;
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? '';
+    const canonicalUrl = `${siteUrl}/${sport}/${slug}`;
+    const ogImageUrl = `${siteUrl}/api/og/${slug}`;
     return {
       title: article.title,
       description: article.metaDescription,
@@ -44,6 +49,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         description: article.metaDescription,
         type: 'article',
         publishedTime: article.publishedAt.toISOString(),
+        images: [{ url: ogImageUrl, width: 1200, height: 675, alt: article.title }],
+      },
+      twitter: {
+        card: 'summary_large_image',
+        title: article.title,
+        description: article.metaDescription,
+        images: [ogImageUrl],
       },
     };
   } catch {
@@ -84,25 +96,67 @@ function getExcerpt(content: string, maxLength = 120): string {
 }
 
 type PitcherStats = {
-  era?: string;
-  record?: string;
+  record: string | null;
+  throws: string | null;
+  ERA: string | null;
+  WHIP: string | null;
+  IP: string | null;
+  K: string | null;
+  BB: string | null;
+  H: string | null;
+  HR: string | null;
 };
 
 function parsePitcherStats(raw: unknown): PitcherStats {
-  if (!raw || typeof raw !== 'object') return {};
-  // ESPN keys are uppercase abbreviations (ERA, WHIP); record is stored as 'record'
+  const empty: PitcherStats = {
+    record: null, throws: null, ERA: null, WHIP: null, IP: null,
+    K: null, BB: null, H: null, HR: null,
+  };
+  if (!raw || typeof raw !== 'object') return empty;
   const s = raw as Record<string, unknown>;
-  const era = (s['ERA'] ?? s['era']) as string | undefined;
-  const record = s['record'] as string | undefined;
 
-  // ESPN record format is "(W-L, ERA)" e.g. "(8-2, 1.34)".
-  // Extract just the W-L part since ERA is shown in its own row.
-  const cleanRecord = record
-    ?.replace(/,\s*[\d.]+\)?$/, '') // strip ", 1.34)" from end
-    .replace(/^\(/, '')             // strip leading "("
-    .trim();
+  const str = (key: string): string | null => {
+    const v = s[key];
+    return v != null ? String(v) : null;
+  };
 
-  return { era, record: cleanRecord };
+  // Handle both rich stats (from summary API) and legacy scoreboard stats
+  let record = str('record');
+  if (record) {
+    // Strip "(W-L, ERA)" format down to just "W-L"
+    const m = record.match(/\(?([\d]+-[\d]+)/);
+    record = m ? m[1] : record.replace(/^\(/, '').replace(/,.*$/, '').trim();
+  } else if (str('W') && str('L')) {
+    record = `${str('W')}-${str('L')}`;
+  }
+
+  // IP: prefer stored value, else compute from FI+PI
+  let ip = str('IP');
+  if (!ip) {
+    const fi = parseFloat(str('FI') ?? '0');
+    const pi = parseFloat(str('PI') ?? '0');
+    if (fi > 0 || pi > 0) ip = (fi + pi / 3).toFixed(1);
+  }
+
+  return {
+    record,
+    throws: str('throws'),
+    ERA: str('ERA') ?? str('era'),
+    WHIP: str('WHIP'),
+    IP: ip,
+    K: str('K'),
+    BB: str('BB'),
+    H: str('H'),
+    HR: str('HR'),
+  };
+}
+
+/** Compute K/9 or BB/9 from counting stat + IP string. */
+function perNine(stat: string | null, ip: string | null): string | null {
+  const s = parseFloat(stat ?? '');
+  const i = parseFloat(ip ?? '');
+  if (!isFinite(s) || !isFinite(i) || i === 0) return null;
+  return (s / i * 9).toFixed(1);
 }
 
 type ArticleWithGame = Awaited<
@@ -144,13 +198,42 @@ function OddsRow({
 }
 
 /* ─── Pitcher stat row ───────────────────────────────────────── */
-function PitcherStat({ label, value }: { label: string; value?: string | number }) {
+function PitcherStat({ label, value }: { label: string; value?: string | null }) {
   return (
     <div className="flex items-center py-2 border-b border-[#E5E7EB] last:border-0">
       <span className="text-[12px] text-[#9CA3AF]">{label}</span>
       <span className="ml-auto font-mono text-[13px] font-bold text-[#1A1A1A]">
         {value ?? '—'}
       </span>
+    </div>
+  );
+}
+
+/* ─── Pitcher panel (one side of the VS card) ───────────────── */
+function PitcherPanel({ team, pitcher, stats }: {
+  team: string;
+  pitcher: string | null;
+  stats: PitcherStats;
+}) {
+  const handPrefix = stats.throws ? `${stats.throws}HP ` : '';
+  const k9 = perNine(stats.K, stats.IP);
+  const bb9 = perNine(stats.BB, stats.IP);
+  return (
+    <div className="p-5 bg-[#F9FAFB]">
+      <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#4B5563] mb-1">{team}</p>
+      <p className="font-serif text-[17px] font-bold text-[#1A1A1A] mb-4">
+        {handPrefix}{pitcher ?? 'TBD'}
+      </p>
+      <PitcherStat label="Record"  value={stats.record} />
+      <PitcherStat label="ERA"     value={stats.ERA} />
+      {stats.WHIP && <PitcherStat label="WHIP" value={stats.WHIP} />}
+      {stats.IP   && <PitcherStat label="IP"   value={stats.IP} />}
+      {/* {stats.K    && <PitcherStat label="K"    value={stats.K} />}
+      {stats.BB   && <PitcherStat label="BB"   value={stats.BB} />}
+      {stats.H    && <PitcherStat label="H"    value={stats.H} />}
+      {stats.HR   && <PitcherStat label="HR"   value={stats.HR} />} */}
+      {k9         && <PitcherStat label="K/9"  value={k9} />}
+      {bb9        && <PitcherStat label="BB/9" value={bb9} />}
     </div>
   );
 }
@@ -268,11 +351,11 @@ export default async function ArticlePage({ params }: Props) {
   } catch { /* ignore */ }
 
   // Most read sidebar
-  let mostRead: typeof related = [];
+  let mostRead: { id: string; title: string; sport: string; slug: string; publishedAt: Date }[] = [];
   try {
     mostRead = await prisma.article.findMany({
       where: { sport },
-      orderBy: { publishedAt: 'desc' },
+      orderBy: { viewCount: 'desc' },
       take: 5,
       select: { id: true, title: true, sport: true, slug: true, publishedAt: true },
     });
@@ -294,6 +377,7 @@ export default async function ArticlePage({ params }: Props) {
   });
 
   const articleUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/${sport}/${slug}`;
+  const authorName = getArticleAuthor(article, game);
 
   const paragraphs = article.content
     .split(/\n\n+/)
@@ -319,13 +403,14 @@ export default async function ArticlePage({ params }: Props) {
     headline: article.title,
     datePublished: article.publishedAt.toISOString(),
     dateModified: article.updatedAt.toISOString(),
-    author: { '@type': 'Organization', name: 'The Matchup Report' },
+    author: { '@type': 'Person', name: authorName },
     publisher: { '@type': 'Organization', name: 'The Matchup Report' },
     description: article.metaDescription,
   };
 
   return (
     <>
+      <ArticleViewTracker articleId={article.id} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -357,10 +442,14 @@ export default async function ArticlePage({ params }: Props) {
               </h1>
               <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-[#D1D5DB]" />
+                  <div className="w-8 h-8 rounded-full bg-[#1A1A1A] flex items-center justify-center">
+                    <span className="text-[10px] font-bold text-white leading-none">
+                      {getAuthorInitials(authorName)}
+                    </span>
+                  </div>
                   <div>
                     <p className="text-[13px] font-bold text-[#1A1A1A] leading-none">
-                      The Matchup Report Staff
+                      {authorName}
                     </p>
                     <LocalPublishedTime
                       iso={article.publishedAt.toISOString()}
@@ -381,7 +470,7 @@ export default async function ArticlePage({ params }: Props) {
             {/* Featured image */}
             {article.featuredImageUrl ? (
               <>
-                <div className="relative w-full mb-2" style={{ aspectRatio: '16/7' }}>
+                <div className="relative w-full mb-2" style={{ aspectRatio: '16/9' }}>
                   <Image
                     src={article.featuredImageUrl}
                     alt={article.imageAlt ?? `${game.awayTeam} vs ${game.homeTeam}`}
@@ -398,7 +487,15 @@ export default async function ArticlePage({ params }: Props) {
               </>
             ) : (
               <>
-                <div className="w-full bg-[#D1D5DB] mb-2" style={{ aspectRatio: '16/7' }} />
+                <div className="relative w-full mb-2" style={{ aspectRatio: '16/9' }}>
+                  <MatchupImage
+                    slug={slug}
+                    alt={article.imageAlt ?? `${game.awayTeam} vs ${game.homeTeam}`}
+                    wide
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 75vw, 900px"
+                    priority
+                  />
+                </div>
                 <p className="text-[11px] text-[#9CA3AF] mb-6">
                   {game.awayTeam} vs {game.homeTeam} · {gameDate}
                 </p>
@@ -458,34 +555,14 @@ export default async function ArticlePage({ params }: Props) {
                   Probable Pitchers
                 </h2>
                 <div className="border border-[#E5E7EB] rounded overflow-hidden grid grid-cols-[1fr_48px_1fr]">
-                  {/* Away pitcher */}
-                  <div className="p-5 bg-[#F9FAFB]">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#4B5563] mb-1">
-                      {game.awayTeam}
-                    </p>
-                    <p className="font-serif text-[17px] font-bold text-[#1A1A1A] mb-4">
-                      {game.awayPitcher ?? 'TBD'}
-                    </p>
-                    <PitcherStat label="ERA" value={awayStats.era} />
-                    <PitcherStat label="Record" value={awayStats.record} />
-                  </div>
+                  <PitcherPanel team={game.awayTeam} pitcher={game.awayPitcher} stats={awayStats} />
                   {/* VS divider */}
                   <div className="flex items-center justify-center bg-[#E5E7EB]">
                     <span className="text-[11px] font-bold text-[#9CA3AF] tracking-widest [writing-mode:vertical-lr]">
                       VS
                     </span>
                   </div>
-                  {/* Home pitcher */}
-                  <div className="p-5 bg-[#F9FAFB]">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#4B5563] mb-1">
-                      {game.homeTeam}
-                    </p>
-                    <p className="font-serif text-[17px] font-bold text-[#1A1A1A] mb-4">
-                      {game.homePitcher ?? 'TBD'}
-                    </p>
-                    <PitcherStat label="ERA" value={homeStats.era} />
-                    <PitcherStat label="Record" value={homeStats.record} />
-                  </div>
+                  <PitcherPanel team={game.homeTeam} pitcher={game.homePitcher} stats={homeStats} />
                 </div>
               </section>
             )}
@@ -561,12 +638,12 @@ export default async function ArticlePage({ params }: Props) {
               ))}
             </div>
 
-            {/* Latest picks */}
+            {/* Latest posts */}
             <div>
               <div className="flex items-center gap-3 border-b-2 border-[#E5E7EB] pb-3 mb-4">
                 <div className="w-1 h-5 bg-[#1A1A1A] rounded-sm" />
                 <h3 className="font-sans text-[12px] font-bold text-[#1A1A1A] uppercase tracking-[0.05em]">
-                  Latest {sport.toUpperCase()} Picks
+                  Latest {sport.toUpperCase()} Posts
                 </h3>
               </div>
               {mostRead.slice(0, 4).map((a) => (

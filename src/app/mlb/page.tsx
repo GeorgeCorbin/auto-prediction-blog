@@ -1,7 +1,9 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { getArticleAuthor } from '@/lib/authors';
 import { prisma } from '@/lib/db';
+import { MatchupImage } from '@/components/MatchupImage';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
 import { AdSlot } from '@/components/AdSlot';
@@ -58,13 +60,19 @@ function ArticleListRow({ article }: { article: ArticleWithGame }) {
       className="group flex gap-5 py-5 border-b border-[#E5E7EB] last:border-0 items-start"
     >
       {/* Image thumbnail */}
-      <div className="relative hidden sm:block w-[100px] h-[72px] bg-[#D1D5DB] shrink-0 overflow-hidden">
-        {article.featuredImageUrl && (
+      <div className="relative hidden sm:block w-[100px] h-[72px] shrink-0 overflow-hidden">
+        {article.featuredImageUrl ? (
           <Image
             src={article.featuredImageUrl}
             alt={article.imageAlt ?? article.title}
             fill
             style={{ objectFit: 'cover' }}
+            sizes="100px"
+          />
+        ) : (
+          <MatchupImage
+            slug={article.slug}
+            alt={article.imageAlt ?? article.title}
             sizes="100px"
           />
         )}
@@ -90,13 +98,6 @@ function ArticleListRow({ article }: { article: ArticleWithGame }) {
         </span>
       </div>
 
-      {/* Pick badge */}
-      <div className="shrink-0 hidden sm:block">
-        <div className="border border-[#FF6B2C] bg-[#FFF7ED] px-4 py-2.5 text-center min-w-[90px]">
-          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#FF6B2C] mb-0.5">Pick</p>
-          <p className="font-sans text-[14px] font-bold text-[#1A1A1A]">{article.pick}</p>
-        </div>
-      </div>
     </Link>
   );
 }
@@ -152,7 +153,7 @@ export default async function MlbPage() {
                   <div className="flex items-center gap-3 border-b-2 border-[#E5E7EB] pb-3 mb-2">
                     <div className="w-1 h-5 bg-[#FF6B2C] rounded-sm" />
                     <h2 className="font-sans text-[14px] font-bold text-[#1A1A1A] uppercase tracking-[0.05em]">
-                      All MLB Picks
+                      All MLB Previews
                     </h2>
                   </div>
                   {listArticles.map((article) => (
@@ -172,7 +173,7 @@ export default async function MlbPage() {
                 <div className="flex items-center gap-3 border-b-2 border-[#E5E7EB] pb-3 mb-4">
                   <div className="w-1 h-5 bg-[#FF6B2C] rounded-sm" />
                   <h3 className="font-sans text-[12px] font-bold text-[#1A1A1A] uppercase tracking-[0.05em]">
-                    Latest Picks
+                    Latest Posts
                   </h3>
                 </div>
                 {articles.slice(0, 5).map((article, i) => (
@@ -206,15 +207,22 @@ export default async function MlbPage() {
 
 function FeaturedCard({ article }: { article: ArticleWithGame }) {
   const game = article.game;
+  const authorName = getArticleAuthor(article, game);
   return (
     <Link href={`/mlb/${article.slug}`} className="group block">
-      <div className="relative w-full bg-[#D1D5DB] mb-3 overflow-hidden" style={{ aspectRatio: '4/3' }}>
-        {article.featuredImageUrl && (
+      <div className="relative w-full mb-3 overflow-hidden" style={{ aspectRatio: '4/3' }}>
+        {article.featuredImageUrl ? (
           <Image
             src={article.featuredImageUrl}
             alt={article.imageAlt ?? article.title}
             fill
             style={{ objectFit: 'cover' }}
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 33vw, 280px"
+          />
+        ) : (
+          <MatchupImage
+            slug={article.slug}
+            alt={article.imageAlt ?? article.title}
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 33vw, 280px"
           />
         )}
@@ -228,11 +236,9 @@ function FeaturedCard({ article }: { article: ArticleWithGame }) {
       <h3 className="font-serif text-[16px] font-bold text-[#1A1A1A] leading-snug group-hover:text-[#FF6B2C] transition-colors line-clamp-3 mb-1.5">
         {article.title}
       </h3>
-      <div className="flex items-center gap-2">
-        <span className="text-[11px] text-[#9CA3AF]">The Matchup Report</span>
-        <span className="text-[11px] text-[#9CA3AF]">·</span>
-        <span className="text-[11px] font-bold text-[#1A1A1A]">{article.pick}</span>
-      </div>
+      {authorName && (
+        <span className="text-[11px] text-[#9CA3AF]">{authorName}</span>
+      )}
     </Link>
   );
 }
