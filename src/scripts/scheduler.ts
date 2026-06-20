@@ -6,9 +6,12 @@ console.log('Scheduler started.');
 console.log('  scan-games:        every hour');
 console.log('  generate-articles: every 30 minutes');
 
-// Run immediately on startup
-scanGames().catch(console.error);
-generateArticles().catch(console.error);
+// Run scan first, then generate — avoids racing on startup when no games are READY yet
+scanGames()
+  .catch(console.error)
+  .finally(() => {
+    generateArticles().catch(console.error);
+  });
 
 // Every hour: scan for new games + odds
 cron.schedule('0 * * * *', () => {
