@@ -5,6 +5,7 @@ import { describeAiConfig, getActiveAiConfig } from '@/lib/ai';
 import { generateArticle } from '@/lib/ai/generator';
 import { MlbGameContext } from '@/lib/ai/prompts/mlb';
 import { isStatsPickWithoutOddsEnabled } from '@/lib/feature-flags';
+import { filterGameDayGames } from '@/lib/games/game-day';
 import { resolveMlbPick } from '@/lib/picks/mlb';
 import { pickAuthorForGame } from '@/lib/authors';
 import { fetchEspnGameSummary } from '@/lib/espn/client';
@@ -37,12 +38,27 @@ export async function generateArticles(): Promise<void> {
     return;
   }
 
+  const gameDayReady = filterGameDayGames(readyGames);
+
+  if (gameDayReady.length === 0) {
+    console.log(
+      `[generate-articles] Skipping — ${readyGames.length} READY game(s) but none on today's slate`,
+    );
+    return;
+  }
+
+  if (gameDayReady.length < readyGames.length) {
+    console.log(
+      `[generate-articles] Ignoring ${readyGames.length - gameDayReady.length} READY game(s) not on today's slate`,
+    );
+  }
+
   console.log(`AI config: ${describeAiConfig(getActiveAiConfig())}`);
-  console.log(`Found ${readyGames.length} READY game(s).`);
+  console.log(`Found ${gameDayReady.length} game-day READY game(s).`);
 
   const allowStatsFallback = isStatsPickWithoutOddsEnabled();
 
-  for (const game of readyGames) {
+  for (const game of gameDayReady) {
     const sportConfig = SPORTS.find((s) => s.key === game.sport && s.enabled);
     if (!sportConfig) {
       console.log(`Skipping game ${game.id}: no enabled sport config for "${game.sport}"`);
@@ -64,7 +80,8 @@ export async function generateArticles(): Promise<void> {
         awayStats,
         homePitcherStats,
         awayPitcherStats,
-        spread: game.spread,
+        spreadHome: game.spreadHome,
+        spreadAway: game.spreadAway,
         moneylineHome: game.moneylineHome,
         moneylineAway: game.moneylineAway,
       },
@@ -92,7 +109,8 @@ export async function generateArticles(): Promise<void> {
       awayPitcherStats,
       homeMoneyline: game.moneylineHome ?? 0,
       awayMoneyline: game.moneylineAway ?? 0,
-      spread: game.spread ?? 0,
+      spreadHome: game.spreadHome ?? 0,
+      spreadAway: game.spreadAway ?? 0,
       total: game.total ?? 0,
       favoredTeam: pick.favoredTeam,
       hasOdds: pick.hasOdds,

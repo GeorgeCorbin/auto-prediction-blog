@@ -14,7 +14,8 @@ export interface MlbGameContext {
   awayPitcherStats: Record<string, string>;
   homeMoneyline: number;
   awayMoneyline: number;
-  spread: number;
+  spreadHome: number;
+  spreadAway: number;
   total: number;
   favoredTeam: 'home' | 'away';
   hasOdds: boolean;
@@ -23,6 +24,10 @@ export interface MlbGameContext {
 
 function formatMoneyline(ml: number): string {
   return ml > 0 ? `+${ml}` : `${ml}`;
+}
+
+function formatSpread(spread: number): string {
+  return spread > 0 ? `+${spread}` : `${spread}`;
 }
 
 function formatDate(date: Date): string {
@@ -41,7 +46,7 @@ export function buildMlbPrompt(ctx: MlbGameContext): string {
 BETTING LINES:
 ${ctx.awayTeam} Moneyline: ${formatMoneyline(ctx.awayMoneyline)}
 ${ctx.homeTeam} Moneyline: ${formatMoneyline(ctx.homeMoneyline)}
-Run Line (spread): ${ctx.homeTeam} ${ctx.spread > 0 ? '+' : ''}${ctx.spread}
+Run Line: ${ctx.awayTeam} ${formatSpread(ctx.spreadAway)}, ${ctx.homeTeam} ${formatSpread(ctx.spreadHome)}
 Over/Under: ${ctx.total}`
     : '';
 

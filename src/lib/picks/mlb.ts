@@ -7,7 +7,8 @@ export interface MlbPickInput {
   awayStats: Record<string, string>;
   homePitcherStats: Record<string, string>;
   awayPitcherStats: Record<string, string>;
-  spread: number | null;
+  spreadHome: number | null;
+  spreadAway: number | null;
   moneylineHome: number | null;
   moneylineAway: number | null;
 }
@@ -43,13 +44,19 @@ function hasUsableOdds(input: MlbPickInput): boolean {
     input.moneylineHome !== null &&
     input.moneylineAway !== null &&
     !(input.moneylineHome === 0 && input.moneylineAway === 0);
-  const hasSpread = input.spread !== null && input.spread !== 0;
+  const hasSpread =
+    (input.spreadHome !== null && input.spreadHome !== 0) ||
+    (input.spreadAway !== null && input.spreadAway !== 0);
   return hasMoneyline || hasSpread;
 }
 
 function pickFromOdds(input: MlbPickInput): 'home' | 'away' {
-  if (input.spread !== null && input.spread !== 0) {
-    return input.spread <= 0 ? 'home' : 'away';
+  if (input.spreadHome !== null && input.spreadHome !== 0) {
+    return input.spreadHome <= 0 ? 'home' : 'away';
+  }
+
+  if (input.spreadAway !== null && input.spreadAway !== 0) {
+    return input.spreadAway <= 0 ? 'away' : 'home';
   }
 
   if (
@@ -97,14 +104,9 @@ function buildOddsPickLabel(
 ): string {
   const favoredTeamName = favoredTeam === 'home' ? input.homeTeam : input.awayTeam;
 
-  if (input.spread !== null && input.spread !== 0) {
-    const spreadForPick =
-      favoredTeam === 'home'
-        ? input.spread
-        : input.spread === 0
-          ? 0
-          : -input.spread;
-    const spreadStr = spreadForPick > 0 ? `+${spreadForPick}` : `${spreadForPick}`;
+  const spread = favoredTeam === 'home' ? input.spreadHome : input.spreadAway;
+  if (spread !== null && spread !== 0) {
+    const spreadStr = spread > 0 ? `+${spread}` : `${spread}`;
     return `${favoredTeamName} ${spreadStr}`;
   }
 

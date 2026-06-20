@@ -1,8 +1,13 @@
 export interface GameOdds {
   homeMoneyline: number | null;
   awayMoneyline: number | null;
-  spread: number | null;       // negative = home favored (e.g. -1.5 for MLB run line)
-  total: number | null;        // over/under line
+  spreadHome: number | null;
+  spreadAway: number | null;
+  spreadHomePrice: number | null;
+  spreadAwayPrice: number | null;
+  total: number | null;
+  overPrice: number | null;
+  underPrice: number | null;
   favoredTeam: 'home' | 'away' | null;
 }
 

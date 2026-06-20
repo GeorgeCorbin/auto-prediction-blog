@@ -1,41 +1,51 @@
 import 'dotenv/config';
 import { fetchEspnScoreboard } from '@/lib/espn/client';
+import {
+  filterGameDayGames,
+  getTodayEspnDateStr,
+  isGameDay,
+} from '@/lib/games/game-day';
 import { oddsProvider } from '@/lib/odds';
 import { ENABLED_SPORTS } from '@/lib/sports/config';
 import { prisma } from '@/lib/db';
 import { isStatsPickWithoutOddsEnabled } from '@/lib/feature-flags';
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function toDateStr(date: Date): string {
-  return date.toISOString().slice(0, 10).replace(/-/g, '');
-}
-
-// ---------------------------------------------------------------------------
 // Core pipeline
 // ---------------------------------------------------------------------------
 
 export async function scanGames(): Promise<void> {
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const todayDateStr = getTodayEspnDateStr();
 
-  const dates = [toDateStr(today), toDateStr(tomorrow)];
+  // Demote games that were marked READY before their game day (legacy early scans)
+  const earlyReady = await prisma.game.findMany({
+    where: { status: 'READY' },
+    select: { id: true, scheduledAt: true },
+  });
+  for (const g of earlyReady) {
+    if (!isGameDay(g.scheduledAt)) {
+      await prisma.game.update({ where: { id: g.id }, data: { status: 'SCHEDULED' } });
+    }
+  }
 
   for (const sport of ENABLED_SPORTS) {
-    console.log(`\n[scan-games] Fetching ESPN scoreboard for ${sport.label} (${dates.join(', ')})`);
+    console.log(
+      `\n[scan-games] Fetching ESPN scoreboard for ${sport.label} (${todayDateStr}, Eastern)`,
+    );
 
-    const games = await fetchEspnScoreboard(sport, dates);
-    console.log(`[scan-games] ESPN returned ${games.length} ${sport.label} games`);
+    const games = await fetchEspnScoreboard(sport, [todayDateStr]);
+    const gameDayGames = filterGameDayGames(games);
 
-    if (games.length === 0) continue;
+    console.log(
+      `[scan-games] ESPN returned ${games.length} ${sport.label} games, ${gameDayGames.length} on today's slate`,
+    );
+
+    if (gameDayGames.length === 0) continue;
 
     // ------------------------------------------------------------------
-    // Step 1: Upsert all games into the DB
+    // Step 1: Upsert today's games (pitchers + team stats)
     // ------------------------------------------------------------------
-    for (const g of games) {
+    for (const g of gameDayGames) {
       await prisma.game.upsert({
         where: { espnEventId: g.espnEventId },
         create: {
@@ -71,12 +81,12 @@ export async function scanGames(): Promise<void> {
     }
 
     // ------------------------------------------------------------------
-    // Step 2: Fetch odds for all games of this sport
+    // Step 2: Fetch odds for today's games only
     // ------------------------------------------------------------------
-    console.log(`[scan-games] Fetching odds for ${games.length} ${sport.label} games`);
+    console.log(`[scan-games] Fetching odds for ${gameDayGames.length} ${sport.label} games`);
 
     const oddsMap = await oddsProvider.getOddsForGames(
-      games.map((g) => ({
+      gameDayGames.map((g) => ({
         homeTeam: g.homeTeam,
         awayTeam: g.awayTeam,
         scheduledAt: g.scheduledAt,
@@ -85,7 +95,7 @@ export async function scanGames(): Promise<void> {
       sport.oddsApiKey,
     );
 
-    console.log(`[scan-games] Odds matched for ${oddsMap.size} of ${games.length} games`);
+    console.log(`[scan-games] Odds matched for ${oddsMap.size} of ${gameDayGames.length} games`);
 
     // ------------------------------------------------------------------
     // Step 3: Update odds on each game record
@@ -96,8 +106,13 @@ export async function scanGames(): Promise<void> {
         data: {
           moneylineHome: odds.homeMoneyline,
           moneylineAway: odds.awayMoneyline,
-          spread: odds.spread,
+          spreadHome: odds.spreadHome,
+          spreadAway: odds.spreadAway,
+          spreadHomePrice: odds.spreadHomePrice,
+          spreadAwayPrice: odds.spreadAwayPrice,
           total: odds.total,
+          overPrice: odds.overPrice,
+          underPrice: odds.underPrice,
         },
       });
     }
@@ -109,7 +124,7 @@ export async function scanGames(): Promise<void> {
     let readyCount = 0;
     const allowStatsFallback = isStatsPickWithoutOddsEnabled();
 
-    for (const g of games) {
+    for (const g of gameDayGames) {
       const odds = oddsMap.get(g.espnEventId);
 
       const hasOdds = odds?.homeMoneyline !== null && odds?.homeMoneyline !== undefined;
@@ -132,7 +147,7 @@ export async function scanGames(): Promise<void> {
     }
 
     console.log(
-      `[scan-games] Scanned ${games.length} ${sport.label} games, ${readyCount} marked READY`,
+      `[scan-games] Processed ${gameDayGames.length} ${sport.label} games, ${readyCount} marked READY`,
     );
   }
 

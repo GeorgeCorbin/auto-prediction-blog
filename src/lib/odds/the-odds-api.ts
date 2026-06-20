@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { z } from 'zod';
+import { filterGameDayGames } from '@/lib/games/game-day';
 import type { GameOdds, OddsProvider } from './provider';
 
 // ---------------------------------------------------------------------------
@@ -95,29 +96,64 @@ function extractMoneylines(
   return { homeMoneyline, awayMoneyline };
 }
 
-function extractSpread(
+function extractSpreads(
   markets: z.infer<typeof MarketSchema>[],
   homeTeam: string,
-): number | null {
+  awayTeam: string,
+): {
+  homeSpread: number | null;
+  awaySpread: number | null;
+  homeSpreadPrice: number | null;
+  awaySpreadPrice: number | null;
+} {
   const spreadsMarket = markets.find((m) => m.key === 'spreads');
-  if (!spreadsMarket) return null;
+  if (!spreadsMarket) {
+    return {
+      homeSpread: null,
+      awaySpread: null,
+      homeSpreadPrice: null,
+      awaySpreadPrice: null,
+    };
+  }
+
+  let homeSpread: number | null = null;
+  let awaySpread: number | null = null;
+  let homeSpreadPrice: number | null = null;
+  let awaySpreadPrice: number | null = null;
 
   for (const outcome of spreadsMarket.outcomes) {
     if (teamsMatch(outcome.name, homeTeam)) {
-      return outcome.point ?? null;
+      homeSpread = outcome.point ?? null;
+      homeSpreadPrice = outcome.price ?? null;
+    } else if (teamsMatch(outcome.name, awayTeam)) {
+      awaySpread = outcome.point ?? null;
+      awaySpreadPrice = outcome.price ?? null;
     }
   }
-  return null;
+
+  return { homeSpread, awaySpread, homeSpreadPrice, awaySpreadPrice };
 }
 
-function extractTotal(markets: z.infer<typeof MarketSchema>[]): number | null {
+function extractTotals(
+  markets: z.infer<typeof MarketSchema>[],
+): { total: number | null; overPrice: number | null; underPrice: number | null } {
   const totalsMarket = markets.find((m) => m.key === 'totals');
-  if (!totalsMarket) return null;
+  if (!totalsMarket) {
+    return { total: null, overPrice: null, underPrice: null };
+  }
 
   const overOutcome = totalsMarket.outcomes.find(
     (o) => o.name.toLowerCase() === 'over',
   );
-  return overOutcome?.point ?? null;
+  const underOutcome = totalsMarket.outcomes.find(
+    (o) => o.name.toLowerCase() === 'under',
+  );
+
+  return {
+    total: overOutcome?.point ?? underOutcome?.point ?? null,
+    overPrice: overOutcome?.price ?? null,
+    underPrice: underOutcome?.price ?? null,
+  };
 }
 
 function determineFavoredTeam(
@@ -157,6 +193,12 @@ export class TheOddsApiProvider implements OddsProvider {
 
     if (games.length === 0) return result;
 
+    const gameDayGames = filterGameDayGames(games);
+    if (gameDayGames.length === 0) {
+      console.log('[odds] Skipping odds fetch — no game-day matchups in request');
+      return result;
+    }
+
     let oddsGames: z.infer<typeof OddsGameSchema>[];
     try {
       const response = await axios.get(`${this.baseUrl}/${sportOddsKey}/odds`, {
@@ -164,6 +206,7 @@ export class TheOddsApiProvider implements OddsProvider {
           apiKey,
           regions: 'us',
           markets: 'h2h,spreads,totals',
+          oddsFormat: 'american',
           dateFormat: 'iso',
         },
         timeout: 15_000,
@@ -180,7 +223,7 @@ export class TheOddsApiProvider implements OddsProvider {
       return result;
     }
 
-    for (const espnGame of games) {
+    for (const espnGame of gameDayGames) {
       // Find the matching odds game by team name + date proximity
       const oddsGame = oddsGames.find(
         (og) =>
@@ -214,17 +257,29 @@ export class TheOddsApiProvider implements OddsProvider {
       const homeMoneyline = oddsHomeIsEspnHome ? rawHome : rawAway;
       const awayMoneyline = oddsHomeIsEspnHome ? rawAway : rawHome;
 
-      const rawSpread = extractSpread(markets, oddsHomeTeam);
-      const spread = oddsHomeIsEspnHome ? rawSpread : (rawSpread !== null ? -rawSpread : null);
+      const rawSpreads = extractSpreads(markets, oddsHomeTeam, oddsAwayTeam);
+      const spreadHome = oddsHomeIsEspnHome ? rawSpreads.homeSpread : rawSpreads.awaySpread;
+      const spreadAway = oddsHomeIsEspnHome ? rawSpreads.awaySpread : rawSpreads.homeSpread;
+      const spreadHomePrice = oddsHomeIsEspnHome
+        ? rawSpreads.homeSpreadPrice
+        : rawSpreads.awaySpreadPrice;
+      const spreadAwayPrice = oddsHomeIsEspnHome
+        ? rawSpreads.awaySpreadPrice
+        : rawSpreads.homeSpreadPrice;
 
-      const total = extractTotal(markets);
+      const { total, overPrice, underPrice } = extractTotals(markets);
       const favoredTeam = determineFavoredTeam(homeMoneyline, awayMoneyline);
 
       result.set(espnGame.espnEventId, {
         homeMoneyline,
         awayMoneyline,
-        spread,
+        spreadHome,
+        spreadAway,
+        spreadHomePrice,
+        spreadAwayPrice,
         total,
+        overPrice,
+        underPrice,
         favoredTeam,
       });
     }

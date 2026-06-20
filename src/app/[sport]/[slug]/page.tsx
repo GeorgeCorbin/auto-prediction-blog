@@ -11,6 +11,7 @@ import { LocalPublishedTime } from '@/components/LocalPublishedTime';
 import { ShareButtons } from '@/components/ShareButtons';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
+import { formatAmericanOdds, formatSpreadPoint } from '@/lib/odds/format';
 
 export const revalidate = 3600;
 
@@ -64,16 +65,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 /* ─── Helpers ────────────────────────────────────────────────── */
-function formatOdds(val: number | null | undefined): string | null {
-  if (val == null) return null;
-  return val > 0 ? `+${val}` : `${val}`;
-}
-
-function formatSpread(val: number | null | undefined): string | null {
-  if (val == null) return null;
-  return val > 0 ? `+${val}` : `${val}`;
-}
-
 function formatTotal(val: number | null | undefined): string | null {
   if (val == null) return null;
   return `${val}`;
@@ -385,12 +376,22 @@ export default async function ArticlePage({ params }: Props) {
     .filter(Boolean);
 
   // Odds
-  const mlHome = formatOdds(game.moneylineHome);
-  const mlAway = formatOdds(game.moneylineAway);
-  const spread = formatSpread(game.spread);
+  const mlHome = formatAmericanOdds(game.moneylineHome);
+  const mlAway = formatAmericanOdds(game.moneylineAway);
+  const awaySpread = formatSpreadPoint(game.spreadAway);
+  const homeSpread = formatSpreadPoint(game.spreadHome);
+  const awaySpreadPrice = formatAmericanOdds(game.spreadAwayPrice);
+  const homeSpreadPrice = formatAmericanOdds(game.spreadHomePrice);
   const total = formatTotal(game.total);
+  const overPrice = formatAmericanOdds(game.overPrice);
+  const underPrice = formatAmericanOdds(game.underPrice);
 
-  const hasOdds = mlHome || mlAway || spread || total;
+  const hasOdds =
+    mlHome ||
+    mlAway ||
+    awaySpread ||
+    homeSpread ||
+    total;
 
   // Pitchers
   const homeStats = parsePitcherStats(game.homePitcherStats);
@@ -524,24 +525,28 @@ export default async function ArticlePage({ params }: Props) {
                   <OddsRow label="MONEYLINE" isHeader />
                   <OddsRow label={game.awayTeam} value={mlAway} />
                   <OddsRow label={game.homeTeam} value={mlHome} />
-                  {spread && (
+                  {(awaySpread || homeSpread) && (
                     <>
                       <OddsRow label="RUN LINE" isHeader />
-                      <OddsRow
-                        label={`${game.awayTeam} ${spread.startsWith('-') ? spread : '+' + spread}`}
-                        value={formatOdds(-110)}
-                      />
-                      <OddsRow
-                        label={`${game.homeTeam} ${spread.startsWith('-') ? '+' + Math.abs(Number(spread)) : spread}`}
-                        value={formatOdds(-110)}
-                      />
+                      {awaySpread && (
+                        <OddsRow
+                          label={`${game.awayTeam} ${awaySpread}`}
+                          value={awaySpreadPrice}
+                        />
+                      )}
+                      {homeSpread && (
+                        <OddsRow
+                          label={`${game.homeTeam} ${homeSpread}`}
+                          value={homeSpreadPrice}
+                        />
+                      )}
                     </>
                   )}
                   {total && (
                     <>
                       <OddsRow label="OVER/UNDER" isHeader />
-                      <OddsRow label={`Over ${total}`} value={formatOdds(-110)} />
-                      <OddsRow label={`Under ${total}`} value={formatOdds(-110)} />
+                      <OddsRow label={`Over ${total}`} value={overPrice} />
+                      <OddsRow label={`Under ${total}`} value={underPrice} />
                     </>
                   )}
                 </div>
