@@ -22,17 +22,17 @@ export function SiteHeader({ activeSport }: SiteHeaderProps) {
 
       {/* Main navbar */}
       <div className={`px-4 sm:px-8 ${showCategoryNav ? 'border-b border-[#E5E7EB]' : ''}`}>
-        <div className="max-w-7xl mx-auto flex items-center h-[72px]">
-          <Link href="/" className="flex flex-col gap-0.5 mr-auto">
-            <span className="font-serif text-[28px] font-bold text-[#1A1A1A] leading-none">
+        <div className="max-w-7xl mx-auto flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:gap-0 sm:h-[72px] sm:py-0">
+          <Link href="/" className="flex flex-col gap-0.5 sm:mr-auto min-w-0">
+            <span className="font-serif text-[24px] sm:text-[28px] font-bold text-[#1A1A1A] leading-tight sm:leading-none">
               The Matchup Report
             </span>
-            <span className="text-[10px] font-sans text-[#9CA3AF] tracking-[0.15em] uppercase">
+            <span className="hidden sm:block text-[10px] font-sans text-[#9CA3AF] tracking-[0.15em] uppercase">
               Sports Predictions &amp; Analysis
             </span>
           </Link>
 
-          <SearchForm className="ml-4 max-w-[220px] sm:max-w-xs" />
+          <SearchForm className="w-full sm:ml-4 sm:w-auto sm:max-w-xs" />
         </div>
       </div>
 

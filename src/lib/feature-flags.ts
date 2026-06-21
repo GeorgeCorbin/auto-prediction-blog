@@ -11,7 +11,7 @@ import type { AiPresetName } from '@/lib/ai/config';
 //  'claude'      Anthropic Claude Haiku 4.5 → needs ANTHROPIC_API_KEY in .env
 //  'local'       Ollama on your machine  → no API key needed, run: ollama serve
 //
-export const aiModel: AiPresetName = 'local';
+export const aiModel: AiPresetName = 'claude';
 
 // ─── Picks ────────────────────────────────────────────────────────────────────
 //

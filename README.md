@@ -123,8 +123,8 @@ AI_PROVIDER=openai AI_MODEL=gpt-4o npm run generate
 
 The scheduler keeps both cron jobs running in a single long-lived process:
 
-- **Every hour** — `scan-games`: fetch ESPN scoreboard for today + tomorrow, upsert odds
-- **Every 30 minutes** — `generate-articles`: pick up any READY games and publish articles
+- **Every hour** — `scan-games`: fetch ESPN scoreboard for today, upsert games and mark READY when pitchers are set
+- **Every 30 minutes** — `generate-articles`: fetch fresh odds for READY games, then publish articles
 
 **Direct (foreground):**
 

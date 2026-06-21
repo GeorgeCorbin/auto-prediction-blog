@@ -5,10 +5,8 @@ import {
   getTodayEspnDateStr,
   isGameDay,
 } from '@/lib/games/game-day';
-import { oddsProvider } from '@/lib/odds';
 import { ENABLED_SPORTS } from '@/lib/sports/config';
 import { prisma } from '@/lib/db';
-import { isStatsPickWithoutOddsEnabled } from '@/lib/feature-flags';
 
 // ---------------------------------------------------------------------------
 // Core pipeline
@@ -81,58 +79,16 @@ export async function scanGames(): Promise<void> {
     }
 
     // ------------------------------------------------------------------
-    // Step 2: Fetch odds for today's games only
-    // ------------------------------------------------------------------
-    console.log(`[scan-games] Fetching odds for ${gameDayGames.length} ${sport.label} games`);
-
-    const oddsMap = await oddsProvider.getOddsForGames(
-      gameDayGames.map((g) => ({
-        homeTeam: g.homeTeam,
-        awayTeam: g.awayTeam,
-        scheduledAt: g.scheduledAt,
-        espnEventId: g.espnEventId,
-      })),
-      sport.oddsApiKey,
-    );
-
-    console.log(`[scan-games] Odds matched for ${oddsMap.size} of ${gameDayGames.length} games`);
-
-    // ------------------------------------------------------------------
-    // Step 3: Update odds on each game record
-    // ------------------------------------------------------------------
-    for (const [espnEventId, odds] of oddsMap.entries()) {
-      await prisma.game.update({
-        where: { espnEventId },
-        data: {
-          moneylineHome: odds.homeMoneyline,
-          moneylineAway: odds.awayMoneyline,
-          spreadHome: odds.spreadHome,
-          spreadAway: odds.spreadAway,
-          spreadHomePrice: odds.spreadHomePrice,
-          spreadAwayPrice: odds.spreadAwayPrice,
-          total: odds.total,
-          overPrice: odds.overPrice,
-          underPrice: odds.underPrice,
-        },
-      });
-    }
-
-    // ------------------------------------------------------------------
-    // Step 4: Mark eligible games as READY
+    // Step 2: Mark eligible games as READY (odds fetched at publish time)
     // ------------------------------------------------------------------
     const now = new Date();
     let readyCount = 0;
-    const allowStatsFallback = isStatsPickWithoutOddsEnabled();
 
     for (const g of gameDayGames) {
-      const odds = oddsMap.get(g.espnEventId);
-
-      const hasOdds = odds?.homeMoneyline !== null && odds?.homeMoneyline !== undefined;
       const hasPitchers = g.homePitcher !== null && g.awayPitcher !== null;
       const isFuture = g.scheduledAt > now;
 
       if (!hasPitchers || !isFuture) continue;
-      if (!hasOdds && !allowStatsFallback) continue;
 
       // Only promote SCHEDULED games — never re-process PUBLISHED ones
       const updated = await prisma.game.updateMany({
