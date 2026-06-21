@@ -54,7 +54,7 @@ Over/Under: ${ctx.total}`
 2. Home team analysis: discuss their offense (AVG, runs, hits) and starting pitcher (name, W-L record, ERA) — only reference stats you are given
 3. Away team analysis: discuss their offense and starting pitcher — only reference stats you are given
 4. Prediction reasoning: compare the pitching matchup, team form, and betting line value
-5. Final paragraph: restate your pick clearly with the spread or moneyline`;
+5. Final paragraph: restate your pick clearly with the spread, moneyline, or total`;
 
   const structureWithoutOdds = `1. Opening paragraph: state the matchup, date, and your headline pick recommendation
 2. Home team analysis: discuss their offense (AVG, runs, hits) and starting pitcher (name, W-L record, ERA) — only reference stats you are given

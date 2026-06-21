@@ -82,8 +82,13 @@ export async function generateArticles(): Promise<void> {
         awayPitcherStats,
         spreadHome: game.spreadHome,
         spreadAway: game.spreadAway,
+        spreadHomePrice: game.spreadHomePrice,
+        spreadAwayPrice: game.spreadAwayPrice,
         moneylineHome: game.moneylineHome,
         moneylineAway: game.moneylineAway,
+        total: game.total,
+        overPrice: game.overPrice,
+        underPrice: game.underPrice,
       },
       { allowStatsFallback },
     );

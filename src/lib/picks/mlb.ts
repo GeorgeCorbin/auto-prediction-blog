@@ -9,14 +9,30 @@ export interface MlbPickInput {
   awayPitcherStats: Record<string, string>;
   spreadHome: number | null;
   spreadAway: number | null;
+  spreadHomePrice: number | null;
+  spreadAwayPrice: number | null;
   moneylineHome: number | null;
   moneylineAway: number | null;
+  total: number | null;
+  overPrice: number | null;
+  underPrice: number | null;
 }
 
 export interface MlbPickResult {
   favoredTeam: 'home' | 'away';
   hasOdds: boolean;
   pickLabel: string;
+}
+
+interface AnalysisScores {
+  homeScore: number;
+  awayScore: number;
+}
+
+interface BetCandidate {
+  label: string;
+  ev: number;
+  edge: number;
 }
 
 function parseWinPct(record: string): number | null {
@@ -47,30 +63,36 @@ function hasUsableOdds(input: MlbPickInput): boolean {
   const hasSpread =
     (input.spreadHome !== null && input.spreadHome !== 0) ||
     (input.spreadAway !== null && input.spreadAway !== 0);
-  return hasMoneyline || hasSpread;
+  const hasTotal =
+    input.total !== null &&
+    input.overPrice !== null &&
+    input.underPrice !== null;
+  return hasMoneyline || hasSpread || hasTotal;
 }
 
-function pickFromOdds(input: MlbPickInput): 'home' | 'away' {
-  if (input.spreadHome !== null && input.spreadHome !== 0) {
-    return input.spreadHome <= 0 ? 'home' : 'away';
-  }
-
-  if (input.spreadAway !== null && input.spreadAway !== 0) {
-    return input.spreadAway <= 0 ? 'away' : 'home';
-  }
-
-  if (
-    input.moneylineHome !== null &&
-    input.moneylineAway !== null &&
-    input.moneylineHome !== input.moneylineAway
-  ) {
-    return input.moneylineHome < input.moneylineAway ? 'home' : 'away';
-  }
-
-  return 'home';
+function americanToDecimalProfit(american: number): number {
+  if (american >= 0) return american / 100;
+  return 100 / Math.abs(american);
 }
 
-function pickFromAnalysis(input: MlbPickInput): 'home' | 'away' {
+function americanToImpliedProb(american: number): number {
+  if (american >= 0) return 100 / (american + 100);
+  return Math.abs(american) / (Math.abs(american) + 100);
+}
+
+function noVigTwoWay(oddsA: number, oddsB: number): { a: number; b: number } {
+  const rawA = americanToImpliedProb(oddsA);
+  const rawB = americanToImpliedProb(oddsB);
+  const overround = rawA + rawB;
+  return { a: rawA / overround, b: rawB / overround };
+}
+
+function expectedValue(modelProb: number, americanOdds: number): number {
+  const profit = americanToDecimalProfit(americanOdds);
+  return modelProb * profit - (1 - modelProb);
+}
+
+function computeAnalysisScores(input: MlbPickInput): AnalysisScores {
   let homeScore = 0.5;
   let awayScore = 0;
 
@@ -95,29 +117,186 @@ function pickFromAnalysis(input: MlbPickInput): 'home' | 'away' {
     else if (awayRuns > homeRuns) awayScore += 1;
   }
 
-  return homeScore >= awayScore ? 'home' : 'away';
+  return { homeScore, awayScore };
 }
 
-function buildOddsPickLabel(
-  favoredTeam: 'home' | 'away',
-  input: MlbPickInput,
-): string {
-  const favoredTeamName = favoredTeam === 'home' ? input.homeTeam : input.awayTeam;
+function analysisToWinProb(scores: AnalysisScores): { homeWinProb: number; awayWinProb: number } {
+  const total = scores.homeScore + scores.awayScore;
+  if (total === 0) return { homeWinProb: 0.5, awayWinProb: 0.5 };
+  return {
+    homeWinProb: scores.homeScore / total,
+    awayWinProb: scores.awayScore / total,
+  };
+}
 
-  const spread = favoredTeam === 'home' ? input.spreadHome : input.spreadAway;
-  if (spread !== null && spread !== 0) {
-    const spreadStr = spread > 0 ? `+${spread}` : `${spread}`;
-    return `${favoredTeamName} ${spreadStr}`;
+function estimateSpreadCoverProb(winProb: number, spread: number): number {
+  if (spread < 0) {
+    const magnitude = Math.abs(spread);
+    const discount = 0.35 + 0.1 * Math.max(0, magnitude - 1);
+    return winProb * (1 - discount);
   }
 
-  const ml =
-    favoredTeam === 'home' ? input.moneylineHome : input.moneylineAway;
-  if (ml !== null && ml !== 0) {
-    const mlStr = ml > 0 ? `+${ml}` : `${ml}`;
-    return `${favoredTeamName} (${mlStr})`;
+  if (spread > 0) {
+    const cushion = 0.28 + 0.08 * Math.max(0, spread - 1);
+    return Math.min(0.98, winProb + (1 - winProb) * cushion);
   }
 
-  return `${favoredTeamName} to win`;
+  return winProb;
+}
+
+function projectedGameTotal(input: MlbPickInput): number | null {
+  const homeRuns = parseStatNumber(input.homeStats, ['Runs', 'Runs Per Game', 'R/G']);
+  const awayRuns = parseStatNumber(input.awayStats, ['Runs', 'Runs Per Game', 'R/G']);
+  if (homeRuns === null || awayRuns === null) return null;
+  return homeRuns + awayRuns;
+}
+
+function estimateOverProb(projectedTotal: number, line: number): number {
+  const diff = projectedTotal - line;
+  return 1 / (1 + Math.exp(-diff * 1.2));
+}
+
+function formatSpread(spread: number): string {
+  return spread > 0 ? `+${spread}` : `${spread}`;
+}
+
+function formatMoneyline(moneyline: number): string {
+  return moneyline > 0 ? `+${moneyline}` : `${moneyline}`;
+}
+
+function formatTotalLine(total: number): string {
+  return Number.isInteger(total) ? `${total}` : `${total}`;
+}
+
+function formatSpreadPick(team: 'home' | 'away', input: MlbPickInput): string | null {
+  const teamName = team === 'home' ? input.homeTeam : input.awayTeam;
+  const spread = team === 'home' ? input.spreadHome : input.spreadAway;
+  if (spread === null || spread === 0) return null;
+  return `${teamName} ${formatSpread(spread)}`;
+}
+
+function formatMoneylinePick(team: 'home' | 'away', input: MlbPickInput): string | null {
+  const teamName = team === 'home' ? input.homeTeam : input.awayTeam;
+  const moneyline = team === 'home' ? input.moneylineHome : input.moneylineAway;
+  if (moneyline === null || moneyline === 0) return null;
+  return `${teamName} (${formatMoneyline(moneyline)})`;
+}
+
+function buildStatsPickLabel(pickedTeam: 'home' | 'away', input: MlbPickInput): string {
+  const pickedTeamName = pickedTeam === 'home' ? input.homeTeam : input.awayTeam;
+  return `${pickedTeamName} to win`;
+}
+
+function buildOddsPickLabel(pickedTeam: 'home' | 'away', input: MlbPickInput): string {
+  return (
+    formatSpreadPick(pickedTeam, input) ??
+    formatMoneylinePick(pickedTeam, input) ??
+    buildStatsPickLabel(pickedTeam, input)
+  );
+}
+
+function pickBestValueBet(input: MlbPickInput): { pickLabel: string; favoredTeam: 'home' | 'away' } {
+  const scores = computeAnalysisScores(input);
+  const { homeWinProb, awayWinProb } = analysisToWinProb(scores);
+  const favoredTeam: 'home' | 'away' = scores.homeScore >= scores.awayScore ? 'home' : 'away';
+  const candidates: BetCandidate[] = [];
+
+  if (
+    input.moneylineHome !== null &&
+    input.moneylineAway !== null &&
+    !(input.moneylineHome === 0 && input.moneylineAway === 0)
+  ) {
+    const fair = noVigTwoWay(input.moneylineHome, input.moneylineAway);
+    const homeLabel = formatMoneylinePick('home', input);
+    const awayLabel = formatMoneylinePick('away', input);
+
+    if (homeLabel) {
+      candidates.push({
+        label: homeLabel,
+        ev: expectedValue(homeWinProb, input.moneylineHome),
+        edge: homeWinProb - fair.a,
+      });
+    }
+    if (awayLabel) {
+      candidates.push({
+        label: awayLabel,
+        ev: expectedValue(awayWinProb, input.moneylineAway),
+        edge: awayWinProb - fair.b,
+      });
+    }
+  }
+
+  if (
+    input.spreadHome !== null &&
+    input.spreadHome !== 0 &&
+    input.spreadHomePrice !== null &&
+    input.spreadAwayPrice !== null
+  ) {
+    const fair = noVigTwoWay(input.spreadHomePrice, input.spreadAwayPrice);
+    const homeCoverProb = estimateSpreadCoverProb(homeWinProb, input.spreadHome);
+    const homeLabel = formatSpreadPick('home', input);
+
+    if (homeLabel) {
+      candidates.push({
+        label: homeLabel,
+        ev: expectedValue(homeCoverProb, input.spreadHomePrice),
+        edge: homeCoverProb - fair.a,
+      });
+    }
+  }
+
+  if (
+    input.spreadAway !== null &&
+    input.spreadAway !== 0 &&
+    input.spreadHomePrice !== null &&
+    input.spreadAwayPrice !== null
+  ) {
+    const fair = noVigTwoWay(input.spreadHomePrice, input.spreadAwayPrice);
+    const awayCoverProb = estimateSpreadCoverProb(awayWinProb, input.spreadAway);
+    const awayLabel = formatSpreadPick('away', input);
+
+    if (awayLabel) {
+      candidates.push({
+        label: awayLabel,
+        ev: expectedValue(awayCoverProb, input.spreadAwayPrice),
+        edge: awayCoverProb - fair.b,
+      });
+    }
+  }
+
+  const projectedTotal = projectedGameTotal(input);
+  if (
+    projectedTotal !== null &&
+    input.total !== null &&
+    input.overPrice !== null &&
+    input.underPrice !== null
+  ) {
+    const fair = noVigTwoWay(input.overPrice, input.underPrice);
+    const overProb = estimateOverProb(projectedTotal, input.total);
+    const underProb = 1 - overProb;
+    const line = formatTotalLine(input.total);
+
+    candidates.push({
+      label: `Over ${line}`,
+      ev: expectedValue(overProb, input.overPrice),
+      edge: overProb - fair.a,
+    });
+    candidates.push({
+      label: `Under ${line}`,
+      ev: expectedValue(underProb, input.underPrice),
+      edge: underProb - fair.b,
+    });
+  }
+
+  if (candidates.length === 0) {
+    return { pickLabel: buildOddsPickLabel(favoredTeam, input), favoredTeam };
+  }
+
+  const positiveEdge = candidates.filter((candidate) => candidate.edge > 0);
+  const pool = positiveEdge.length > 0 ? positiveEdge : candidates;
+  pool.sort((a, b) => b.ev - a.ev || b.edge - a.edge);
+
+  return { pickLabel: pool[0].label, favoredTeam };
 }
 
 export function resolveMlbPick(
@@ -130,11 +309,16 @@ export function resolveMlbPick(
     return null;
   }
 
-  const favoredTeam = hasOdds ? pickFromOdds(input) : pickFromAnalysis(input);
-  const favoredTeamName = favoredTeam === 'home' ? input.homeTeam : input.awayTeam;
-  const pickLabel = hasOdds
-    ? buildOddsPickLabel(favoredTeam, input)
-    : `${favoredTeamName} to win`;
+  if (hasOdds) {
+    const { pickLabel, favoredTeam } = pickBestValueBet(input);
+    return { favoredTeam, hasOdds, pickLabel };
+  }
 
-  return { favoredTeam, hasOdds, pickLabel };
+  const scores = computeAnalysisScores(input);
+  const pickedTeam: 'home' | 'away' = scores.homeScore >= scores.awayScore ? 'home' : 'away';
+  return {
+    favoredTeam: pickedTeam,
+    hasOdds: false,
+    pickLabel: buildStatsPickLabel(pickedTeam, input),
+  };
 }
