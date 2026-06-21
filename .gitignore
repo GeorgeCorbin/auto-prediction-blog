@@ -43,7 +43,8 @@ next-env.d.ts
 
 /src/generated/prisma
 
-game date grabber info/
-
 ./AGENTS.md
 ./CLAUDE.md
+
+# for me
+/src/lib/feature-flags.ts
