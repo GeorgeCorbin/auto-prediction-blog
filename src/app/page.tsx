@@ -6,6 +6,8 @@ import { MatchupImage } from '@/components/MatchupImage';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
 import { AdSlot } from '@/components/AdSlot';
+import { LocalDateTime } from '@/components/LocalDateTime';
+import { formatEasternDateTimeFallback } from '@/lib/dates';
 
 export const revalidate = 1800;
 
@@ -28,10 +30,6 @@ function timeAgo(date: Date): string {
   if (diffH < 24) return `${diffH}h ago`;
   const diffD = Math.floor(diffH / 24);
   return `${diffD}d ago`;
-}
-
-function formatGameTime(date: Date): string {
-  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) + ' ET';
 }
 
 function getExcerpt(content: string, maxLength = 160): string {
@@ -137,16 +135,17 @@ function GridCard({ article }: { article: ArticleWithGame }) {
       </div>
       <div className="flex items-center gap-2 mb-2">
         <SportTag sport={article.sport} />
-        <span className="text-[11px] text-[#9CA3AF]">
-          {game.scheduledAt ? formatGameTime(game.scheduledAt) : timeAgo(article.publishedAt)}
-        </span>
+        <LocalDateTime
+          iso={article.publishedAt.toISOString()}
+          fallback={formatEasternDateTimeFallback(article.publishedAt)}
+          className="text-[11px] text-[#9CA3AF]"
+        />
       </div>
       <h3 className="font-serif text-[16px] font-bold text-[#1A1A1A] leading-[1.3] mb-2 group-hover:text-[#FF6B2C] transition-colors line-clamp-3">
         {article.title}
       </h3>
       <div className="flex items-center gap-2 text-[11px] text-[#9CA3AF]">
-        {authorName && <><span>{authorName}</span><span>·</span></>}
-        <span>{timeAgo(article.publishedAt)}</span>
+        {authorName && <span>{authorName}</span>}
       </div>
     </Link>
   );

@@ -3,7 +3,9 @@ import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
 import { SearchForm } from '@/components/SearchForm';
+import { LocalDateTime } from '@/components/LocalDateTime';
 import { searchArticles } from '@/lib/search';
+import { formatEasternDateTimeFallback } from '@/lib/dates';
 
 type Props = {
   searchParams: Promise<{ q?: string }>;
@@ -24,21 +26,6 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
     title: `Search: ${query}`,
     description: `Search results for "${query}" on The Matchup Report.`,
   };
-}
-
-function timeAgo(date: Date): string {
-  const diffH = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60));
-  if (diffH < 1) return 'Just now';
-  if (diffH < 24) return `${diffH}h ago`;
-  return `${Math.floor(diffH / 24)}d ago`;
-}
-
-function formatGameDate(date: Date): string {
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
 }
 
 function getExcerpt(content: string, maxLength = 160): string {
@@ -63,11 +50,13 @@ function SearchResultRow({ article }: { article: SearchResult }) {
           <span className="inline-flex items-center bg-[#FEF3EE] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#FF6B2C] rounded-sm">
             {article.sport.toUpperCase()}
           </span>
-          <span>{formatGameDate(game.scheduledAt)}</span>
+          <LocalDateTime
+            iso={article.publishedAt.toISOString()}
+            fallback={formatEasternDateTimeFallback(article.publishedAt)}
+            className="text-[11px] text-[#9CA3AF]"
+          />
           <span>·</span>
           <span>{game.awayTeam} @ {game.homeTeam}</span>
-          <span>·</span>
-          <span>{timeAgo(article.publishedAt)}</span>
         </div>
         <h2 className="font-serif text-[18px] font-bold text-[#1A1A1A] leading-snug mb-2 group-hover:text-[#FF6B2C] transition-colors">
           {article.title}

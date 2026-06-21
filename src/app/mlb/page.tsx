@@ -7,6 +7,8 @@ import { MatchupImage } from '@/components/MatchupImage';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
 import { AdSlot } from '@/components/AdSlot';
+import { LocalDateTime } from '@/components/LocalDateTime';
+import { formatEasternDateTimeFallback } from '@/lib/dates';
 
 export const revalidate = 1800;
 
@@ -26,23 +28,6 @@ async function getMlbArticles() {
   } catch {
     return [];
   }
-}
-
-function timeAgo(date: Date): string {
-  const diffH = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60));
-  if (diffH < 1) return 'Just now';
-  if (diffH < 24) return `${diffH}h ago`;
-  return `${Math.floor(diffH / 24)}d ago`;
-}
-
-function formatGameDate(date: Date): string {
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short', month: 'short', day: 'numeric',
-  });
-}
-
-function formatGameTime(date: Date): string {
-  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) + ' ET';
 }
 
 function getExcerpt(content: string, maxLength = 160): string {
@@ -81,11 +66,11 @@ function ArticleListRow({ article }: { article: ArticleWithGame }) {
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-3 mb-2 text-[11px] text-[#9CA3AF]">
-          <span>{formatGameDate(game.scheduledAt)}</span>
-          <span>·</span>
-          <span>{formatGameTime(game.scheduledAt)}</span>
-          <span>·</span>
-          <span>{timeAgo(article.publishedAt)}</span>
+          <LocalDateTime
+            iso={article.publishedAt.toISOString()}
+            fallback={formatEasternDateTimeFallback(article.publishedAt)}
+            className="text-[11px] text-[#9CA3AF]"
+          />
         </div>
         <h2 className="font-serif text-[18px] font-bold text-[#1A1A1A] leading-snug mb-2 group-hover:text-[#FF6B2C] transition-colors">
           {article.title}
@@ -231,7 +216,11 @@ function FeaturedCard({ article }: { article: ArticleWithGame }) {
         <span className="inline-flex items-center bg-[#FEF3EE] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#FF6B2C] rounded-sm">
           MLB
         </span>
-        <span className="text-[11px] text-[#9CA3AF]">{formatGameTime(game.scheduledAt)}</span>
+        <LocalDateTime
+          iso={article.publishedAt.toISOString()}
+          fallback={formatEasternDateTimeFallback(article.publishedAt)}
+          className="text-[11px] text-[#9CA3AF]"
+        />
       </div>
       <h3 className="font-serif text-[16px] font-bold text-[#1A1A1A] leading-snug group-hover:text-[#FF6B2C] transition-colors line-clamp-3 mb-1.5">
         {article.title}

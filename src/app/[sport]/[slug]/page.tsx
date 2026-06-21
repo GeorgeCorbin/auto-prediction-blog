@@ -7,7 +7,8 @@ import { prisma } from '@/lib/db';
 import { AdSlot } from '@/components/AdSlot';
 import { ArticleViewTracker } from '@/components/ArticleViewTracker';
 import { MatchupImage } from '@/components/MatchupImage';
-import { LocalPublishedTime } from '@/components/LocalPublishedTime';
+import { LocalDateTime } from '@/components/LocalDateTime';
+import { formatEasternDateTimeFallback } from '@/lib/dates';
 import { ShareButtons } from '@/components/ShareButtons';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
@@ -352,20 +353,8 @@ export default async function ArticlePage({ params }: Props) {
     });
   } catch { /* ignore */ }
 
-  const gameDate = game.scheduledAt.toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-  });
-
-  // ET fallback shown server-side until the browser reports its timezone
-  const publishedAtEt = article.publishedAt.toLocaleString('en-US', {
-    timeZone: 'America/New_York',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  });
+  const gameDateTimeEt = formatEasternDateTimeFallback(game.scheduledAt);
+  const publishedAtEt = formatEasternDateTimeFallback(article.publishedAt);
 
   const articleUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/${sport}/${slug}`;
   const authorName = getArticleAuthor(article, game);
@@ -452,9 +441,10 @@ export default async function ArticlePage({ params }: Props) {
                     <p className="text-[13px] font-bold text-[#1A1A1A] leading-none">
                       {authorName}
                     </p>
-                    <LocalPublishedTime
+                    <LocalDateTime
                       iso={article.publishedAt.toISOString()}
                       fallback={publishedAtEt}
+                      className="text-[11px] text-[#9CA3AF] leading-none mt-0.5"
                     />
                   </div>
                 </div>
@@ -482,7 +472,12 @@ export default async function ArticlePage({ params }: Props) {
                   />
                 </div>
                 <p className="text-[11px] text-[#9CA3AF] mb-6">
-                  {game.awayTeam} vs {game.homeTeam} · {gameDate}
+                  {game.awayTeam} vs {game.homeTeam} ·{' '}
+                  <LocalDateTime
+                    iso={game.scheduledAt.toISOString()}
+                    fallback={gameDateTimeEt}
+                    className="text-[11px] text-[#9CA3AF]"
+                  />
                   {article.imageCredit ? ` · Photo: ${article.imageCredit}` : ''}
                 </p>
               </>
@@ -498,7 +493,12 @@ export default async function ArticlePage({ params }: Props) {
                   />
                 </div>
                 <p className="text-[11px] text-[#9CA3AF] mb-6">
-                  {game.awayTeam} vs {game.homeTeam} · {gameDate}
+                  {game.awayTeam} vs {game.homeTeam} ·{' '}
+                  <LocalDateTime
+                    iso={game.scheduledAt.toISOString()}
+                    fallback={gameDateTimeEt}
+                    className="text-[11px] text-[#9CA3AF]"
+                  />
                 </p>
               </>
             )}
