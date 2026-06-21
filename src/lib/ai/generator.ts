@@ -1,4 +1,5 @@
 import { completePrompt } from '@/lib/ai';
+import { stripRedundantPickCallouts } from '@/lib/articles/content';
 import { SportConfig } from '@/lib/sports/config';
 import { buildMlbPrompt, MlbGameContext } from './prompts/mlb';
 
@@ -37,7 +38,8 @@ export async function generateArticle(
   const lines = rawText.split('\n');
 
   const title = lines[0]?.trim() ?? `${context.awayTeam} vs ${context.homeTeam} Prediction`;
-  const content = lines.slice(2).join('\n').trim();
+  const rawContent = lines.slice(2).join('\n').trim();
+  const content = stripRedundantPickCallouts(rawContent, context.pickLabel);
 
   const pick = context.pickLabel;
   const metaDescription = buildMetaDescription(context, pick);

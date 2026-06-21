@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getArticleAuthor, getAuthorInitials } from '@/lib/authors';
+import { stripRedundantPickCallouts } from '@/lib/articles/content';
 import { prisma } from '@/lib/db';
 import { AdSlot } from '@/components/AdSlot';
 import { ArticleViewTracker } from '@/components/ArticleViewTracker';
@@ -359,7 +360,7 @@ export default async function ArticlePage({ params }: Props) {
   const articleUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/${sport}/${slug}`;
   const authorName = getArticleAuthor(article, game);
 
-  const paragraphs = article.content
+  const paragraphs = stripRedundantPickCallouts(article.content, article.pick)
     .split(/\n\n+/)
     .map((p) => p.trim())
     .filter(Boolean);

@@ -53,14 +53,12 @@ Over/Under: ${ctx.total}`
   const structureWithOdds = `1. Opening paragraph: state the matchup, date, and your headline pick recommendation
 2. Home team analysis: discuss their offense (AVG, runs, hits) and starting pitcher (name, W-L record, ERA) — only reference stats you are given
 3. Away team analysis: discuss their offense and starting pitcher — only reference stats you are given
-4. Prediction reasoning: compare the pitching matchup, team form, and betting line value
-5. Final paragraph: restate your pick clearly with the spread, moneyline, or total`;
+4. Prediction reasoning: compare the pitching matchup, team form, and betting line value — weave your pick into this analysis naturally`;
 
   const structureWithoutOdds = `1. Opening paragraph: state the matchup, date, and your headline pick recommendation
 2. Home team analysis: discuss their offense (AVG, runs, hits) and starting pitcher (name, W-L record, ERA) — only reference stats you are given
 3. Away team analysis: discuss their offense and starting pitcher — only reference stats you are given
-4. Prediction reasoning: compare the pitching matchup, team records, and recent form — do not reference betting lines
-5. Final paragraph: restate your pick clearly as a straight-up winner (team name only, no spread or moneyline)`;
+4. Prediction reasoning: compare the pitching matchup, team records, and recent form — weave your straight-up winner pick into this analysis naturally; do not reference betting lines`;
 
   const systemPrompt = `You are a professional sports analyst writing MLB game prediction articles for a sports prediction blog. Your writing style is authoritative, data-driven, and engaging — similar to ESPN or The Athletic. Write in the third person and avoid using "I".
 
@@ -103,11 +101,12 @@ PROBABLE STARTERS:
 ${ctx.awayTeam}: ${ctx.awayPitcher} — ${awayPitcherLine}
 ${ctx.homeTeam}: ${ctx.homePitcher} — ${homePitcherLine}${bettingLinesSection}
 
-OUR PICK: ${ctx.pickLabel}
+EDITORIAL PICK (for your analysis only — do NOT copy this line or any standalone pick callout into the article): ${ctx.pickLabel}
 
 ━━━ END DATA BLOCK ━━━
 
 Write the article now. Every number you quote must appear exactly as shown in the DATA BLOCK above. Make the analysis compelling without inventing stats.`;
+
 
   return `${systemPrompt}\n\n${userPrompt}`;
 }
