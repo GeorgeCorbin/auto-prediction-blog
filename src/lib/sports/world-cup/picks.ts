@@ -147,7 +147,100 @@ function hasUsableOdds(input: WorldCupPickInput): boolean {
   return hasThreeWay || hasTotal;
 }
 
-function computeWinProbs(input: WorldCupPickInput): {
+/** Max American moneyline for value picks — avoids phantom +EV on huge underdogs. */
+const MAX_VALUE_MONEYLINE = 400;
+
+function hasMeaningfulTeamData(
+  form: string,
+  record: string,
+  stats: Record<string, string>,
+): boolean {
+  if (form.replace(/[^WDL]/gi, '')) return true;
+  if (parseWinPct(record) !== null) return true;
+  return (
+    parseStatNumber(stats, ['Goals', 'Goals Per Game', 'Goals/Game', 'GPG', 'GF']) !==
+    null
+  );
+}
+
+/** How much to trust form/record stats vs market-implied probabilities (0–0.35). */
+function statsDataWeight(input: WorldCupPickInput): number {
+  const home = hasMeaningfulTeamData(
+    input.formHome,
+    input.homeRecord,
+    input.homeStats,
+  );
+  const away = hasMeaningfulTeamData(
+    input.formAway,
+    input.awayRecord,
+    input.awayStats,
+  );
+  if (home && away) return 0.35;
+  if (home || away) return 0.15;
+  return 0;
+}
+
+function getMarketWinProbs(input: WorldCupPickInput): {
+  homeWinProb: number;
+  drawProb: number;
+  awayWinProb: number;
+} | null {
+  if (
+    input.moneylineHome === null ||
+    input.moneylineAway === null ||
+    input.moneylineDraw === null
+  ) {
+    return null;
+  }
+
+  const fair = noVigThreeWay(
+    input.moneylineHome,
+    input.moneylineDraw,
+    input.moneylineAway,
+  );
+  return {
+    homeWinProb: fair.home,
+    drawProb: fair.draw,
+    awayWinProb: fair.away,
+  };
+}
+
+function blendWinProbs(
+  statsProbs: { homeWinProb: number; drawProb: number; awayWinProb: number },
+  marketProbs: { homeWinProb: number; drawProb: number; awayWinProb: number } | null,
+  statsWeight: number,
+): { homeWinProb: number; drawProb: number; awayWinProb: number } {
+  if (!marketProbs || statsWeight <= 0) {
+    return marketProbs ?? statsProbs;
+  }
+
+  const marketWeight = 1 - statsWeight;
+  return {
+    homeWinProb:
+      statsWeight * statsProbs.homeWinProb +
+      marketWeight * marketProbs.homeWinProb,
+    drawProb:
+      statsWeight * statsProbs.drawProb + marketWeight * marketProbs.drawProb,
+    awayWinProb:
+      statsWeight * statsProbs.awayWinProb +
+      marketWeight * marketProbs.awayWinProb,
+  };
+}
+
+function resolveWinProbs(input: WorldCupPickInput): {
+  homeWinProb: number;
+  drawProb: number;
+  awayWinProb: number;
+} {
+  const statsProbs = computeStatsWinProbs(input);
+  const marketProbs = getMarketWinProbs(input);
+  if (!marketProbs) return statsProbs;
+
+  const weight = statsDataWeight(input);
+  return blendWinProbs(statsProbs, marketProbs, weight);
+}
+
+function computeStatsWinProbs(input: WorldCupPickInput): {
   homeWinProb: number;
   drawProb: number;
   awayWinProb: number;
@@ -229,6 +322,10 @@ function pickBestFavoredTeam(probs: {
   return 'draw';
 }
 
+function isEligibleMoneylineCandidate(american: number): boolean {
+  return american <= MAX_VALUE_MONEYLINE;
+}
+
 function pickBestValueBet(
   input: WorldCupPickInput,
   probs: { homeWinProb: number; drawProb: number; awayWinProb: number },
@@ -247,26 +344,49 @@ function pickBestValueBet(
       input.moneylineAway,
     );
 
-    candidates.push(
+    const sides: Array<{
+      favoredTeam: 'home' | 'away' | 'draw';
+      american: number;
+      teamLabel: string;
+      prob: number;
+      fairProb: number;
+    }> = [
       {
         favoredTeam: 'home',
-        label: `${input.homeTeam} (${formatMoneyline(input.moneylineHome)})`,
-        ev: expectedValue(probs.homeWinProb, input.moneylineHome),
-        edge: probs.homeWinProb - fair.home,
+        american: input.moneylineHome,
+        teamLabel: input.homeTeam,
+        prob: probs.homeWinProb,
+        fairProb: fair.home,
       },
       {
         favoredTeam: 'draw',
-        label: `Draw (${formatMoneyline(input.moneylineDraw)})`,
-        ev: expectedValue(probs.drawProb, input.moneylineDraw),
-        edge: probs.drawProb - fair.draw,
+        american: input.moneylineDraw,
+        teamLabel: 'Draw',
+        prob: probs.drawProb,
+        fairProb: fair.draw,
       },
       {
         favoredTeam: 'away',
-        label: `${input.awayTeam} (${formatMoneyline(input.moneylineAway)})`,
-        ev: expectedValue(probs.awayWinProb, input.moneylineAway),
-        edge: probs.awayWinProb - fair.away,
+        american: input.moneylineAway,
+        teamLabel: input.awayTeam,
+        prob: probs.awayWinProb,
+        fairProb: fair.away,
       },
-    );
+    ];
+
+    for (const side of sides) {
+      if (!isEligibleMoneylineCandidate(side.american)) continue;
+      const label =
+        side.favoredTeam === 'draw'
+          ? `Draw (${formatMoneyline(side.american)})`
+          : `${side.teamLabel} (${formatMoneyline(side.american)})`;
+      candidates.push({
+        favoredTeam: side.favoredTeam,
+        label,
+        ev: expectedValue(side.prob, side.american),
+        edge: side.prob - side.fairProb,
+      });
+    }
   }
 
   const projectedTotal = projectedGoals(input);
@@ -325,7 +445,7 @@ export function estimateWorldCupPickConfidence(
   input: WorldCupPickInput,
   pick: string,
 ): number {
-  const probs = computeWinProbs(input);
+  const probs = resolveWinProbs(input);
   const pickLower = pick.toLowerCase();
 
   if (pickLower === 'draw') return probs.drawProb;
@@ -358,23 +478,24 @@ export function resolveWorldCupPick(
     return null;
   }
 
-  const probs = computeWinProbs(input);
+  const probs = resolveWinProbs(input);
 
   if (hasOdds) {
     const { favoredTeam, pickLabel } = pickBestValueBet(input, probs);
     return { favoredTeam, hasOdds: true, pickLabel };
   }
 
-  const picked = pickBestFavoredTeam(probs);
+  const statsProbs = computeStatsWinProbs(input);
+  const picked = pickBestFavoredTeam(statsProbs);
   const seed = input.seed ?? `${input.awayTeam}:${input.homeTeam}`;
   const statsOptions: Array<'home' | 'away' | 'draw'> = [picked];
-  if (probs.drawProb >= 0.2 && picked !== 'draw') statsOptions.push('draw');
+  if (statsProbs.drawProb >= 0.2 && picked !== 'draw') statsOptions.push('draw');
   const runnerUp =
-    probs.homeWinProb >= probs.awayWinProb
-      ? probs.awayWinProb >= probs.drawProb
+    statsProbs.homeWinProb >= statsProbs.awayWinProb
+      ? statsProbs.awayWinProb >= statsProbs.drawProb
         ? 'away'
         : 'draw'
-      : probs.homeWinProb >= probs.drawProb
+      : statsProbs.homeWinProb >= statsProbs.drawProb
         ? 'home'
         : 'draw';
   if (runnerUp !== picked) statsOptions.push(runnerUp);
