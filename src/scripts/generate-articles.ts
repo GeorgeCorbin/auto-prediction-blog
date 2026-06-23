@@ -12,6 +12,10 @@ import { fetchEspnGameSummary } from '@/lib/espn/client';
 import { getSportModule } from '@/lib/sports/registry';
 import { buildArticleSlug } from '@/lib/sports/pipeline';
 import {
+  canPublishMlbGameNow,
+  getMlbEarliestPublishTime,
+} from '@/lib/sports/mlb/publish-schedule';
+import {
   getInterArticleDelayMs,
   getMaxArticlesPerRun,
   prioritizeGamesForPublishing,
@@ -50,23 +54,45 @@ export async function generateArticles(): Promise<void> {
     return filterGamesForSport([game], sportConfig, now).length > 0;
   });
 
-  if (eligibleReady.length === 0) {
+  const mlbScheduleGames =
+    eligibleReady.some((g) => g.sport === 'mlb')
+      ? await prisma.game.findMany({
+          where: {
+            sport: 'mlb',
+            scheduledAt: { gt: new Date(now.getTime() - 26 * 60 * 60 * 1000) },
+          },
+          select: { id: true, scheduledAt: true },
+        })
+      : [];
+
+  const publishableReady = eligibleReady.filter((game) => {
+    if (game.sport !== 'mlb') return true;
+    if (canPublishMlbGameNow(game, mlbScheduleGames, now)) return true;
+
+    const earliest = getMlbEarliestPublishTime(game, mlbScheduleGames);
     console.log(
-      `[generate-articles] Skipping — ${readyGames.length} READY game(s) but none within publishing window`,
+      `[generate-articles] Holding ${game.awayTeam} @ ${game.homeTeam} until ${earliest.toISOString()}`,
+    );
+    return false;
+  });
+
+  if (publishableReady.length === 0) {
+    console.log(
+      `[generate-articles] Skipping — ${readyGames.length} READY game(s) but none eligible to publish now`,
     );
     return;
   }
 
-  if (eligibleReady.length < readyGames.length) {
+  if (publishableReady.length < readyGames.length) {
     console.log(
-      `[generate-articles] Ignoring ${readyGames.length - eligibleReady.length} READY game(s) outside publishing window`,
+      `[generate-articles] Ignoring ${readyGames.length - publishableReady.length} READY game(s) outside publishing window or on hold`,
     );
   }
 
   console.log(`AI config: ${describeAiConfig(getActiveAiConfig())}`);
-  console.log(`Found ${eligibleReady.length} READY game(s) within publishing window.`);
+  console.log(`Found ${publishableReady.length} READY game(s) eligible to publish now.`);
 
-  const prioritized = prioritizeGamesForPublishing(eligibleReady);
+  const prioritized = prioritizeGamesForPublishing(publishableReady);
   const maxThisRun = getMaxArticlesPerRun(prioritized.length, now);
   const gamesToPublish = prioritized.slice(0, maxThisRun);
   const deferredCount = prioritized.length - gamesToPublish.length;

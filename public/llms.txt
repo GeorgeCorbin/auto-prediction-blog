@@ -1,0 +1,26 @@
+# The Matchup Report
+
+> Data-driven sports predictions, odds analysis, and daily game previews for MLB and FIFA World Cup. Articles combine live odds, ESPN game data, and statistical analysis into readable picks and matchup breakdowns.
+
+The Matchup Report publishes automated game previews and betting picks updated daily and refreshed near game time. Content is for entertainment and educational purposes only—not financial or gambling advice.
+
+**Active sports:** MLB (year-round), FIFA World Cup (June–July 2026).
+
+**Article URLs:** `https://thematchupreport.com/{sport}/{slug}` — e.g. `/mlb/...` or `/world-cup/...`. Use the sitemap for a full list of published articles.
+
+## Core Pages
+
+- [Home](https://thematchupreport.com/): Latest predictions, best picks, and most-read articles across all sports.
+- [MLB Predictions](https://thematchupreport.com/mlb): Daily baseball game previews with probable pitchers, odds, and picks.
+- [World Cup Predictions](https://thematchupreport.com/world-cup): FIFA World Cup match previews, odds analysis, and picks during the tournament window.
+- [About](https://thematchupreport.com/about): How predictions are generated, data sources used, and responsible-use disclaimer.
+- [Contact](https://thematchupreport.com/contact): General, advertising, and editorial contact information.
+
+## Discovery
+
+- [Sitemap](https://thematchupreport.com/sitemap.xml): Machine-readable index of all public pages and published articles.
+
+## Optional
+
+- [Privacy Policy](https://thematchupreport.com/privacy-policy): Data collection, cookies, analytics, and user rights.
+- [Terms of Service](https://thematchupreport.com/terms): Site usage terms, disclaimers, and liability limitations.

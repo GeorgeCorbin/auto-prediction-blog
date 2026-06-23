@@ -1,5 +1,6 @@
 import { publishHoursEt } from '@/lib/feature-flags';
 import type { SportConfig } from '@/lib/sports/config';
+import { isWithinMlbArticleLeadWindow } from '@/lib/sports/mlb/publish-schedule';
 
 /** MLB schedule and publishing use US Eastern calendar dates. */
 export const GAME_DAY_TIMEZONE = 'America/New_York';
@@ -109,6 +110,9 @@ export function filterGamesForSport<T extends { scheduledAt: Date }>(
   sport: SportConfig,
   now = new Date(),
 ): T[] {
+  if (sport.key === 'mlb') {
+    return games.filter((g) => isWithinMlbArticleLeadWindow(g.scheduledAt, now));
+  }
   const leadDays = getArticleLeadDays(sport);
   return games.filter((g) => isWithinArticleLeadWindow(g.scheduledAt, leadDays, now));
 }
@@ -120,6 +124,9 @@ export function shouldDemoteReadyGame(
   now = new Date(),
 ): boolean {
   if (scheduledAt <= now) return true;
+  if (sport.key === 'mlb') {
+    return !isWithinMlbArticleLeadWindow(scheduledAt, now);
+  }
   return !isWithinArticleLeadWindow(scheduledAt, getArticleLeadDays(sport), now);
 }
 

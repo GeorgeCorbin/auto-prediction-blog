@@ -25,6 +25,7 @@ export const SPORTS: SportConfig[] = [
     articleSlugPrefix: '/mlb',
     promptTemplate: 'mlb',
     enabled: true,
+    scanLookaheadDays: 1,
   },
   {
     key: 'world-cup',

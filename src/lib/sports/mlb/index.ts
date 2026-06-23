@@ -2,10 +2,14 @@ import type { Prisma } from '@prisma/client';
 import type { Game } from '@prisma/client';
 import { fetchEspnScoreboard } from '@/lib/espn/client';
 import type { EspnGame, EspnGameSummary } from '@/lib/espn/client';
-import { filterGameDayGames } from '@/lib/games/game-day';
+import {
+  getEspnDateRange,
+  getScanLookaheadDays,
+} from '@/lib/games/game-day';
 import { prisma } from '@/lib/db';
 import type { SportConfig } from '@/lib/sports/config';
 import { safeJsonRecord } from '@/lib/sports/helpers';
+import { isWithinMlbArticleLeadWindow } from './publish-schedule';
 import { parseMlbSportData } from './schema';
 import { resolveMlbPick } from './picks';
 import { buildMlbMetaDescription, buildMlbPrompt, type MlbGameContext } from './prompts';
@@ -31,21 +35,27 @@ function mergePitcherStats(
   return { ...(current ?? {}), ...rich };
 }
 
-export async function scanMlbGameDay(sport: SportConfig, todayDateStr: string): Promise<void> {
-  console.log(
-    `\n[scan-games] Fetching ESPN scoreboard for ${sport.label} (${todayDateStr}, Eastern)`,
-  );
-
-  const games = await fetchEspnScoreboard(sport, [todayDateStr]);
-  const gameDayGames = filterGameDayGames(games);
+export async function scanMlbGameDay(sport: SportConfig, _todayDateStr: string): Promise<void> {
+  const now = new Date();
+  const lookaheadDays = getScanLookaheadDays(sport);
+  const dateRange = getEspnDateRange(lookaheadDays, now);
 
   console.log(
-    `[scan-games] ESPN returned ${games.length} ${sport.label} games, ${gameDayGames.length} on today's slate`,
+    `\n[scan-games] Fetching ESPN scoreboard for ${sport.label} (${dateRange.join(', ')}, Eastern)`,
   );
 
-  if (gameDayGames.length === 0) return;
+  const games = await fetchEspnScoreboard(sport, dateRange);
+  const windowGames = games.filter((g) =>
+    isWithinMlbArticleLeadWindow(g.scheduledAt, now),
+  );
 
-  for (const g of gameDayGames) {
+  console.log(
+    `[scan-games] ESPN returned ${games.length} ${sport.label} games, ${windowGames.length} within 24-hour publishing window`,
+  );
+
+  if (windowGames.length === 0) return;
+
+  for (const g of windowGames) {
     const sportData = buildMlbSportDataFromEspn(g);
     await prisma.game.upsert({
       where: { espnEventId: g.espnEventId },
@@ -77,8 +87,8 @@ export async function scanMlbGameDay(sport: SportConfig, todayDateStr: string): 
 
   let readyCount = 0;
 
-  for (const g of gameDayGames) {
-    if (!isMlbReady(g)) continue;
+  for (const g of windowGames) {
+    if (!isMlbReady(g, now)) continue;
 
     const updated = await prisma.game.updateMany({
       where: {
@@ -92,13 +102,17 @@ export async function scanMlbGameDay(sport: SportConfig, todayDateStr: string): 
   }
 
   console.log(
-    `[scan-games] Processed ${gameDayGames.length} ${sport.label} games, ${readyCount} marked READY`,
+    `[scan-games] Processed ${windowGames.length} ${sport.label} games, ${readyCount} marked READY`,
   );
 }
 
-export function isMlbReady(espnGame: EspnGame): boolean {
+export function isMlbReady(espnGame: EspnGame, now = new Date()): boolean {
   const hasPitchers = espnGame.homePitcher !== null && espnGame.awayPitcher !== null;
-  return hasPitchers && espnGame.scheduledAt > new Date();
+  return (
+    hasPitchers &&
+    espnGame.scheduledAt > now &&
+    isWithinMlbArticleLeadWindow(espnGame.scheduledAt, now)
+  );
 }
 
 function buildPickInput(game: Game) {
