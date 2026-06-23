@@ -26,7 +26,29 @@ export const AUTHORS = [
   'Evan Roberts',
 ] as const;
 
+export const WORLD_CUP_AUTHORS = [
+  'Marco Delgado',
+  'James Whitfield',
+  'Luca Santini',
+  'Andre Okonkwo',
+  'Felix Hartmann',
+  'Diego Morales',
+  'Samuel Okoye',
+  'Henrik Larsson',
+  'Rafael Costa',
+  'Oliver Pemberton',
+  'Matteo Ricci',
+  'Kwame Asante',
+  'Sebastian Varga',
+  'Nico Bergstrom',
+  'Emilio Navarro',
+  'Jonas Meier',
+  'Carlos Mendez',
+  'Hugo Fontaine',
+] as const;
+
 export type AuthorName = (typeof AUTHORS)[number];
+export type WorldCupAuthorName = (typeof WORLD_CUP_AUTHORS)[number];
 
 /** Primary beat writers per team — some authors cover multiple clubs. */
 const TEAM_BEAT_WRITERS: Record<string, readonly AuthorName[]> = {
@@ -87,16 +109,26 @@ function beatWritersForTeam(abbr: string): readonly AuthorName[] {
   return TEAM_BEAT_WRITERS[normalizeTeamAbbr(abbr)] ?? AUTHORS;
 }
 
+function pickFromPool<T extends string>(pool: readonly T[], seed: string): T {
+  const hash = hashString(seed);
+  return pool[(hash >> 4) % pool.length];
+}
+
 /**
  * Picks a beat writer for a game. Deterministic for a given seed (slug) so the
- * same matchup always gets the same author. Favors the home team's beat writer
- * ~75% of the time, with occasional cross-coverage for variety.
+ * same matchup always gets the same author. MLB favors the home team's beat writer
+ * ~75% of the time; World Cup draws from a dedicated international soccer pool.
  */
 export function pickAuthorForGame(
+  sport: string,
   homeTeamAbbr: string,
   awayTeamAbbr: string,
   seed: string,
-): AuthorName {
+): string {
+  if (sport === 'world-cup') {
+    return pickFromPool(WORLD_CUP_AUTHORS, seed);
+  }
+
   const hash = hashString(seed);
   const focusHome = hash % 4 !== 0;
   const teamAbbr = focusHome ? homeTeamAbbr : awayTeamAbbr;
@@ -110,15 +142,18 @@ export function pickAuthorForGame(
 }
 
 export function getArticleAuthor(
-  article: { author?: string | null; slug: string },
-  game: { homeTeamAbbr?: string; awayTeamAbbr?: string },
+  article: { author?: string | null; slug: string; sport?: string | null },
+  game: { homeTeamAbbr?: string; awayTeamAbbr?: string; sport?: string },
 ): string {
   if (article.author?.trim()) return article.author.trim();
   const home = game.homeTeamAbbr?.trim();
   const away = game.awayTeamAbbr?.trim();
+  const sport = article.sport ?? game.sport ?? 'mlb';
   const derived = home && away
-    ? pickAuthorForGame(home, away, article.slug)
-    : AUTHORS[hashString(article.slug) % AUTHORS.length];
+    ? pickAuthorForGame(sport, home, away, article.slug)
+    : sport === 'world-cup'
+      ? pickFromPool(WORLD_CUP_AUTHORS, article.slug)
+      : AUTHORS[hashString(article.slug) % AUTHORS.length];
   return derived || AUTHORS[0];
 }
 

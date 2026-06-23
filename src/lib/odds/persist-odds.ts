@@ -24,6 +24,7 @@ export async function fetchAndPersistOddsForGames(
       data: {
         moneylineHome: odds.homeMoneyline,
         moneylineAway: odds.awayMoneyline,
+        moneylineDraw: odds.moneylineDraw,
         spreadHome: odds.spreadHome,
         spreadAway: odds.spreadAway,
         spreadHomePrice: odds.spreadHomePrice,

@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { prisma } from '@/lib/db';
-import { ENABLED_SPORTS } from '@/lib/sports/config';
+import { getActiveSports } from '@/lib/sports/config';
 
 const STATIC_PAGES: Array<{
   path: string;
@@ -24,7 +24,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'hourly',
       priority: 1,
     },
-    ...ENABLED_SPORTS.map(({ key }) => ({
+    ...getActiveSports().map(({ key }) => ({
       url: `${siteUrl}/${key}`,
       lastModified: now,
       changeFrequency: 'hourly' as const,

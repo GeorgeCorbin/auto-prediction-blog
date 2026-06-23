@@ -1,7 +1,7 @@
 import { completePrompt } from '@/lib/ai';
 import { stripRedundantPickCallouts } from '@/lib/articles/content';
 import { SportConfig } from '@/lib/sports/config';
-import { buildMlbPrompt, MlbGameContext } from './prompts/mlb';
+import type { AnySportModule, PromptContextBase } from '@/lib/sports/types';
 
 export interface ArticleResult {
   title: string;
@@ -10,30 +10,12 @@ export interface ArticleResult {
   metaDescription: string;
 }
 
-function buildMetaDescription(ctx: MlbGameContext, pick: string): string {
-  const date = ctx.scheduledAt.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
-  const desc = `${ctx.awayTeam} vs ${ctx.homeTeam} prediction for ${date}. Our pick: ${pick}. Expert analysis with starting pitcher stats and team trends.`;
-  return desc.length > 160 ? desc.slice(0, 157) + '...' : desc;
-}
-
-export async function generateArticle(
+export async function generateArticle<T extends PromptContextBase>(
   sport: SportConfig,
-  context: MlbGameContext
+  mod: AnySportModule,
+  context: T,
 ): Promise<ArticleResult> {
-  let prompt: string;
-
-  switch (sport.promptTemplate) {
-    case 'mlb':
-      prompt = buildMlbPrompt(context);
-      break;
-    default:
-      throw new Error(`No prompt template found for sport: ${sport.promptTemplate}`);
-  }
-
+  const prompt = mod.buildPrompt(context);
   const rawText = await completePrompt(prompt);
   const lines = rawText.split('\n');
 
@@ -42,7 +24,7 @@ export async function generateArticle(
   const content = stripRedundantPickCallouts(rawContent, context.pickLabel);
 
   const pick = context.pickLabel;
-  const metaDescription = buildMetaDescription(context, pick);
+  const metaDescription = mod.buildMetaDescription(context, pick);
 
   return { title, content, pick, metaDescription };
 }

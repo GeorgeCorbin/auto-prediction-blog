@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ENABLED_SPORTS } from '@/lib/sports/config';
+import { getActiveSports } from '@/lib/sports/config';
 import { SearchForm } from '@/components/SearchForm';
 
 interface SiteHeaderProps {
@@ -7,7 +7,8 @@ interface SiteHeaderProps {
 }
 
 export function SiteHeader({ activeSport }: SiteHeaderProps) {
-  const showCategoryNav = ENABLED_SPORTS.length >= 2;
+  const activeSports = getActiveSports();
+  const showCategoryNav = activeSports.length >= 2;
 
   return (
     <header className="w-full border-b border-[#E5E7EB] bg-white">
@@ -40,7 +41,7 @@ export function SiteHeader({ activeSport }: SiteHeaderProps) {
       {showCategoryNav && (
         <nav className="px-4 sm:px-8 border-b border-[#E5E7EB] overflow-x-auto">
           <div className="max-w-7xl mx-auto flex items-center h-11">
-            {ENABLED_SPORTS.map(({ key, label }) => {
+            {activeSports.map(({ key, label }) => {
               const isActive = activeSport === key;
               return (
                 <Link

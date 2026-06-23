@@ -32,15 +32,13 @@ model Game {
   spreadAwayPrice Int?
   moneylineHome   Int?
   moneylineAway   Int?
+  moneylineDraw   Int?
   total           Float?
   overPrice       Int?
   underPrice      Int?
 
-  // Pitchers / game-specific info
-  homePitcher      String?
-  awayPitcher      String?
-  homePitcherStats Json?
-  awayPitcherStats Json?
+  // Sport-specific payload (pitchers, form, group, etc.)
+  sportData Json?
 
   // Team season stats (from ESPN)
   homeStats Json?

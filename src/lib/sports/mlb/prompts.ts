@@ -1,4 +1,7 @@
+import { pickFromPool } from '@/lib/sports/helpers';
+
 export interface MlbGameContext {
+  variationSeed: string;
   homeTeam: string;
   awayTeam: string;
   homeTeamAbbr: string;
@@ -38,8 +41,38 @@ function formatDate(date: Date): string {
   });
 }
 
+const MLB_ANGLES = [
+  {
+    name: 'pitching duel',
+    hook: (ctx: MlbGameContext) =>
+      `Open with the pitching matchup between ${ctx.awayPitcher} and ${ctx.homePitcher} — who has the edge based only on the stats provided.`,
+    emphasis: 'Lead with starting pitcher W-L and ERA, then team offense.',
+  },
+  {
+    name: 'offensive firepower',
+    hook: (ctx: MlbGameContext) =>
+      `Open by contrasting ${ctx.awayTeam} and ${ctx.homeTeam} offensive production using only season averages from the DATA BLOCK.`,
+    emphasis: 'Lead with team hitting stats, then connect to the pitching matchup.',
+  },
+  {
+    name: 'form and records',
+    hook: (ctx: MlbGameContext) =>
+      `Open with how each team's record and recent trajectory set up this ${formatDate(ctx.scheduledAt)} matchup — cite only provided records and stats.`,
+    emphasis: 'Balance team records with pitcher profiles before your pick.',
+  },
+  {
+    name: 'betting line read',
+    hook: (ctx: MlbGameContext) =>
+      ctx.hasOdds
+        ? `Open with how the betting market prices this game and where the numbers may align or diverge from team form — DATA BLOCK only.`
+        : `Open with a straight-up winner read based on records, pitching, and team stats from the DATA BLOCK.`,
+    emphasis: 'Weave market context (if available) into pitcher and team analysis.',
+  },
+] as const;
+
 export function buildMlbPrompt(ctx: MlbGameContext): string {
   const gameDate = formatDate(ctx.scheduledAt);
+  const angle = pickFromPool(MLB_ANGLES, `${ctx.variationSeed}:mlb-angle`);
 
   const bettingLinesSection = ctx.hasOdds
     ? `
@@ -63,9 +96,13 @@ Over/Under: ${ctx.total}`
   const systemPrompt = `You are a professional sports analyst writing MLB game prediction articles for a sports prediction blog. Your writing style is authoritative, data-driven, and engaging — similar to ESPN or The Athletic. Write in the third person and avoid using "I".
 
 CRITICAL RULE — NO STAT HALLUCINATION:
-You will be given a DATA BLOCK containing the only stats you are allowed to cite. You MUST NOT invent, estimate, or infer any statistic not explicitly listed in that block. If a stat is not in the data block (e.g. WHIP, batting average, OPS, strikeout rate, recent streak length), do NOT mention it — not even approximately. Violating this rule undermines the credibility of the site. When you want to make an analytical point but lack a specific number, use general language ("strong ERA", "solid offensive output") instead of fabricating a figure.`;
+You will be given a DATA BLOCK containing the only stats you are allowed to cite. You MUST NOT invent, estimate, or infer any statistic not explicitly listed in that block. If a stat is not in the data block (e.g. WHIP, batting average, OPS, strikeout rate, recent streak length), do NOT mention it — not even approximately. Violating this rule undermines the credibility of the site. When you want to make an analytical point but lack a specific number, use general language ("strong ERA", "solid offensive output") instead of fabricating a figure.
 
-  // Build the data block — only real values, clearly labelled
+ANTI-REPETITION:
+- Do NOT use generic openings like "In what promises to be..." or "All eyes will be on..."
+- This article uses the "${angle.name}" angle — ${angle.emphasis}
+- Vary paragraph openings; avoid repetitive transition phrases`;
+
   const awayPitcherLine = Object.entries(ctx.awayPitcherStats)
     .filter(([k]) => k !== 'record')
     .map(([k, v]) => `${k}: ${v}`)
@@ -81,6 +118,9 @@ FORMAT:
 - Line 1: Article title in exactly this format: "{AwayTeam} vs {HomeTeam} Prediction {Month Day, Year}"
 - Line 2: Empty line
 - Line 3 onward: Article body
+
+OPENING HOOK (paragraph 1):
+${angle.hook(ctx)}
 
 STRUCTURE (follow this order):
 ${ctx.hasOdds ? structureWithOdds : structureWithoutOdds}
@@ -107,6 +147,15 @@ EDITORIAL PICK (for your analysis only — do NOT copy this line or any standalo
 
 Write the article now. Every number you quote must appear exactly as shown in the DATA BLOCK above. Make the analysis compelling without inventing stats.`;
 
-
   return `${systemPrompt}\n\n${userPrompt}`;
+}
+
+export function buildMlbMetaDescription(ctx: MlbGameContext, pick: string): string {
+  const date = ctx.scheduledAt.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const desc = `${ctx.awayTeam} vs ${ctx.homeTeam} prediction for ${date}. Our pick: ${pick}. Expert analysis with starting pitcher stats and team trends.`;
+  return desc.length > 160 ? desc.slice(0, 157) + '...' : desc;
 }

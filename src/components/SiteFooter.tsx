@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ENABLED_SPORTS } from '@/lib/sports/config';
+import { getActiveSports } from '@/lib/sports/config';
 
 const ABOUT_LINKS = [
   { label: 'About Us', href: '/about' },
@@ -12,6 +12,8 @@ const LEGAL_LINKS = [
 ];
 
 export function SiteFooter() {
+  const activeSports = getActiveSports();
+
   return (
     <footer className="bg-[#1A1A1A] mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-8 py-12">
@@ -27,13 +29,13 @@ export function SiteFooter() {
           </div>
 
           {/* Sports column — driven by enabled sports */}
-          {ENABLED_SPORTS.length > 0 && (
+          {activeSports.length > 0 && (
             <div>
               <h3 className="text-white text-[10px] font-bold uppercase tracking-[0.12em] mb-4">
                 Sports
               </h3>
               <ul className="space-y-2.5">
-                {ENABLED_SPORTS.map(({ key, label }) => (
+                {activeSports.map(({ key, label }) => (
                   <li key={key}>
                     <Link
                       href={`/${key}`}

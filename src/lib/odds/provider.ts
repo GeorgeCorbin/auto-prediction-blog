@@ -1,6 +1,7 @@
 export interface GameOdds {
   homeMoneyline: number | null;
   awayMoneyline: number | null;
+  moneylineDraw: number | null;
   spreadHome: number | null;
   spreadAway: number | null;
   spreadHomePrice: number | null;
@@ -8,7 +9,7 @@ export interface GameOdds {
   total: number | null;
   overPrice: number | null;
   underPrice: number | null;
-  favoredTeam: 'home' | 'away' | null;
+  favoredTeam: 'home' | 'away' | 'draw' | null;
 }
 
 export interface OddsProvider {

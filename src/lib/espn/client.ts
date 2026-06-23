@@ -33,6 +33,7 @@ const TeamSchema = z.object({
 
 const CompetitorSchema = z.object({
   homeAway: z.string().optional(),
+  form: z.string().optional(),
   team: TeamSchema.optional(),
   records: z.array(RecordSchema).optional(),
   statistics: z.array(StatSchema).optional(),
@@ -47,14 +48,54 @@ const StatusSchema = z.object({
   type: StatusTypeSchema.optional(),
 });
 
+const VenueAddressSchema = z.object({
+  city: z.string().optional(),
+  state: z.string().optional(),
+  country: z.string().optional(),
+});
+
+const VenueScoreboardSchema = z.object({
+  fullName: z.string().optional(),
+  address: VenueAddressSchema.optional(),
+});
+
+const GeoBroadcastSchema = z.object({
+  media: z.object({ shortName: z.string().optional() }).optional(),
+  market: z.object({ type: z.string().optional() }).optional(),
+  type: z.object({ shortName: z.string().optional() }).optional(),
+});
+
+const BroadcastMarketSchema = z.object({
+  market: z.string().optional(),
+  names: z.array(z.string()).optional(),
+});
+
 const CompetitionSchema = z.object({
   competitors: z.array(CompetitorSchema).optional(),
+  notes: z.array(z.object({ headline: z.string().optional() })).optional(),
+  altGameNote: z.string().optional(),
+  type: z.object({
+    abbreviation: z.string().optional(),
+    name: z.string().optional(),
+  }).optional(),
+  venue: VenueScoreboardSchema.optional(),
+  geoBroadcasts: z.array(GeoBroadcastSchema).optional(),
+  broadcasts: z.array(BroadcastMarketSchema).optional(),
+});
+
+const EventSeasonSchema = z.object({
+  slug: z.string().optional(),
+  type: z.union([
+    z.number(),
+    z.object({ name: z.string().optional(), abbreviation: z.string().optional() }),
+  ]).optional(),
 });
 
 const EventSchema = z.object({
   id: z.string().optional(),
   date: z.string().optional(),
   status: StatusSchema.optional(),
+  season: EventSeasonSchema.optional(),
   competitions: z.array(CompetitionSchema).optional(),
 });
 
@@ -86,6 +127,18 @@ export interface EspnGame {
   awayPitcher: string | null;
   homePitcherStats: PitcherStats | null;
   awayPitcherStats: PitcherStats | null;
+  /** Recent form string (e.g. "WWDLW") — used by soccer modules */
+  homeForm?: string | null;
+  awayForm?: string | null;
+  /** Competition note headline (group, knockout round, etc.) */
+  gameNote?: string | null;
+  groupName: string | null;
+  stage: string | null;
+  /** Deduplicated broadcaster short names (e.g. FOX, Peacock) */
+  broadcasts: string[];
+  venueName: string | null;
+  venueCity: string | null;
+  venueCountry: string | null;
   status: 'pre' | 'in' | 'post' | string;
 }
 
@@ -108,6 +161,27 @@ function buildStatMap(
   return map;
 }
 
+function extractBroadcastNames(
+  geoBroadcasts: z.infer<typeof GeoBroadcastSchema>[] | undefined,
+  broadcasts: z.infer<typeof BroadcastMarketSchema>[] | undefined,
+): string[] {
+  const names = new Set<string>();
+
+  for (const gb of geoBroadcasts ?? []) {
+    const name = gb.media?.shortName?.trim();
+    if (name) names.add(name);
+  }
+
+  for (const b of broadcasts ?? []) {
+    for (const name of b.names ?? []) {
+      const trimmed = name.trim();
+      if (trimmed) names.add(trimmed);
+    }
+  }
+
+  return Array.from(names);
+}
+
 function buildPitcherStats(probable: z.infer<typeof ProbableSchema> | undefined): PitcherStats | null {
   if (!probable) return null;
   const stats = buildStatMap(probable.statistics, 'abbreviation');
@@ -115,6 +189,47 @@ function buildPitcherStats(probable: z.infer<typeof ProbableSchema> | undefined)
     stats['record'] = probable.record;
   }
   return Object.keys(stats).length > 0 ? stats : null;
+}
+
+const WDL_FORM_RE = /^[WDL]+$/i;
+const WDL_RECORD_RE = /^\d+\s*-\s*\d+\s*-\s*\d+$/;
+
+function extractCompetitorForm(
+  competitor: z.infer<typeof CompetitorSchema>,
+): string | null {
+  if (competitor.form?.trim()) {
+    return competitor.form.trim();
+  }
+
+  const statForm = competitor.statistics
+    ?.find((s) => s.name?.toLowerCase() === 'form')
+    ?.displayValue?.trim();
+  if (statForm && WDL_FORM_RE.test(statForm)) {
+    return statForm;
+  }
+
+  const recordForm = competitor.records
+    ?.find((r) => r.summary && WDL_FORM_RE.test(r.summary))
+    ?.summary?.trim();
+  return recordForm ?? null;
+}
+
+function extractCompetitorRecord(
+  records: z.infer<typeof RecordSchema>[] | undefined,
+): string | null {
+  const wdlRecord = records?.find((r) => r.summary && WDL_RECORD_RE.test(r.summary.trim()));
+  if (wdlRecord?.summary) {
+    return wdlRecord.summary.trim();
+  }
+  return records?.[0]?.summary?.trim() ?? null;
+}
+
+function slugToTitleCase(slug: string): string {
+  return slug
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function parseEvent(event: z.infer<typeof EventSchema>): EspnGame | null {
@@ -130,6 +245,41 @@ function parseEvent(event: z.infer<typeof EventSchema>): EspnGame | null {
 
   if (!home || !away) return null;
 
+  const noteHeadline = competition.notes?.[0]?.headline?.trim() ?? '';
+  const altGameNote = competition.altGameNote?.trim() ?? '';
+  const contextNote = noteHeadline || altGameNote;
+  const groupMatch = contextNote.match(/Group\s+([A-Z0-9]+)/i);
+  const groupName = groupMatch ? `Group ${groupMatch[1].toUpperCase()}` : null;
+
+  const compTypeLabel =
+    competition.type?.name?.trim() ||
+    competition.type?.abbreviation?.trim() ||
+    null;
+  const seasonType =
+    typeof event.season?.type === 'object'
+      ? event.season.type.name?.trim() || event.season.type.abbreviation?.trim() || null
+      : null;
+  const seasonSlug = event.season?.slug?.trim();
+
+  let stage: string | null = null;
+  if (compTypeLabel) {
+    stage = compTypeLabel;
+  } else if (seasonType) {
+    stage = seasonType;
+  } else if (seasonSlug) {
+    stage = slugToTitleCase(seasonSlug);
+  } else if (/knockout|round of|quarter|semi|final/i.test(contextNote)) {
+    stage = contextNote || 'Knockout Stage';
+  } else if (groupName) {
+    stage = 'Group Stage';
+  }
+
+  const homeForm = extractCompetitorForm(home);
+  const awayForm = extractCompetitorForm(away);
+
+  const venue = competition.venue;
+  const broadcasts = extractBroadcastNames(competition.geoBroadcasts, competition.broadcasts);
+
   return {
     espnEventId: event.id,
     homeTeam: home.team?.displayName ?? 'Unknown',
@@ -137,14 +287,23 @@ function parseEvent(event: z.infer<typeof EventSchema>): EspnGame | null {
     homeTeamAbbr: home.team?.abbreviation ?? '',
     awayTeamAbbr: away.team?.abbreviation ?? '',
     scheduledAt: event.date ? new Date(event.date) : new Date(),
-    homeRecord: home.records?.[0]?.summary ?? null,
-    awayRecord: away.records?.[0]?.summary ?? null,
+    homeRecord: extractCompetitorRecord(home.records),
+    awayRecord: extractCompetitorRecord(away.records),
     homeStats: buildStatMap(home.statistics, 'name'),
     awayStats: buildStatMap(away.statistics, 'name'),
     homePitcher: home.probables?.[0]?.athlete?.displayName ?? null,
     awayPitcher: away.probables?.[0]?.athlete?.displayName ?? null,
     homePitcherStats: buildPitcherStats(home.probables?.[0]),
     awayPitcherStats: buildPitcherStats(away.probables?.[0]),
+    homeForm,
+    awayForm,
+    gameNote: contextNote || null,
+    groupName,
+    stage,
+    broadcasts,
+    venueName: venue?.fullName ?? null,
+    venueCity: venue?.address?.city ?? null,
+    venueCountry: venue?.address?.country ?? venue?.address?.state ?? null,
     status: event.status?.type?.state ?? 'pre',
   };
 }
@@ -159,8 +318,15 @@ const VenueImageSchema = z.object({
 
 const VenueSchema = z.object({
   fullName: z.string().optional(),
+  address: VenueAddressSchema.optional(),
   images: z.array(VenueImageSchema).optional(),
 });
+
+const SummaryBroadcastSchema = z.object({
+  media: z.object({ shortName: z.string().optional(), name: z.string().optional() }).optional(),
+});
+
+const SummaryBroadcastsSchema = z.array(SummaryBroadcastSchema).optional();
 
 const GameInfoSchema = z.object({
   venue: VenueSchema.optional(),
@@ -215,6 +381,7 @@ const SummaryHeaderSchema = z.object({
 const SummaryResponseSchema = z.object({
   gameInfo: GameInfoSchema.optional(),
   header: SummaryHeaderSchema.optional(),
+  broadcasts: SummaryBroadcastsSchema,
 });
 
 // ---------------------------------------------------------------------------
@@ -244,6 +411,10 @@ export interface EspnRichPitcherStats {
 
 export interface EspnGameSummary {
   venueImage: EspnVenueImage;
+  venueName: string | null;
+  venueCity: string | null;
+  venueCountry: string | null;
+  broadcasts: string[];
   homePitcherStats: EspnRichPitcherStats | null;
   awayPitcherStats: EspnRichPitcherStats | null;
 }
@@ -330,19 +501,37 @@ export async function fetchEspnGameSummary(
     data = response.data;
   } catch (err) {
     console.warn(`[espn-client] Failed to fetch summary for event ${espnEventId}:`, err);
-    return { venueImage: fallbackVenue, homePitcherStats: null, awayPitcherStats: null };
+    return {
+      venueImage: fallbackVenue,
+      venueName: null,
+      venueCity: null,
+      venueCountry: null,
+      broadcasts: [],
+      homePitcherStats: null,
+      awayPitcherStats: null,
+    };
   }
 
   const parsed = SummaryResponseSchema.safeParse(data);
   if (!parsed.success) {
     console.warn(`[espn-client] Unexpected summary shape for event ${espnEventId}:`, parsed.error.issues);
-    return { venueImage: fallbackVenue, homePitcherStats: null, awayPitcherStats: null };
+    return {
+      venueImage: fallbackVenue,
+      venueName: null,
+      venueCity: null,
+      venueCountry: null,
+      broadcasts: [],
+      homePitcherStats: null,
+      awayPitcherStats: null,
+    };
   }
 
-  // Venue image
+  // Venue image + location
   const venue = parsed.data.gameInfo?.venue;
   const imageUrl = venue?.images?.[0]?.href ?? null;
-  const venueName = venue?.fullName ?? '';
+  const venueName = venue?.fullName ?? null;
+  const venueCity = venue?.address?.city ?? null;
+  const venueCountry = venue?.address?.country ?? venue?.address?.state ?? null;
   const venueImage: EspnVenueImage = {
     imageUrl,
     imageAlt: venueName
@@ -351,6 +540,11 @@ export async function fetchEspnGameSummary(
     imageCredit: 'ESPN',
   };
 
+  const summaryBroadcasts = (parsed.data.broadcasts ?? [])
+    .map((b) => b.media?.shortName ?? b.media?.name)
+    .filter((n): n is string => Boolean(n?.trim()))
+    .map((n) => n.trim());
+
   // Pitcher stats from header
   const competitors = parsed.data.header?.competitions?.[0]?.competitors ?? [];
   const homeComp = competitors.find((c) => c.homeAway === 'home');
@@ -358,6 +552,10 @@ export async function fetchEspnGameSummary(
 
   return {
     venueImage,
+    venueName,
+    venueCity,
+    venueCountry,
+    broadcasts: [...new Set(summaryBroadcasts)],
     homePitcherStats: extractRichPitcherStats(homeComp?.probables?.[0]),
     awayPitcherStats: extractRichPitcherStats(awayComp?.probables?.[0]),
   };

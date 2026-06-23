@@ -20,8 +20,13 @@ export function teamColor(abbr: string): string {
 }
 
 export function teamLogoUrl(abbr: string, sport: string): string {
-  const league = sport === 'mlb' ? 'mlb' : sport;
-  return `https://a.espncdn.com/i/teamlogos/${league}/500/${abbr.toLowerCase()}.png`;
+  if (sport === 'mlb') {
+    return `https://a.espncdn.com/i/teamlogos/mlb/500/${abbr.toLowerCase()}.png`;
+  }
+  if (sport === 'world-cup') {
+    return `https://a.espncdn.com/i/teamlogos/countries/500/${abbr.toLowerCase()}.png`;
+  }
+  return `https://a.espncdn.com/i/teamlogos/${sport}/500/${abbr.toLowerCase()}.png`;
 }
 
 export async function fetchLogoAsDataUrl(url: string): Promise<string> {
