@@ -299,6 +299,48 @@ function pickBestValueBet(input: MlbPickInput): { pickLabel: string; favoredTeam
   return { pickLabel: pool[0].label, favoredTeam };
 }
 
+/** Model probability that the stored pick is correct (0–1). */
+export function estimateMlbPickConfidence(input: MlbPickInput, pick: string): number {
+  const scores = computeAnalysisScores(input);
+  const { homeWinProb, awayWinProb } = analysisToWinProb(scores);
+  const pickLower = pick.toLowerCase();
+
+  if (pickLower.startsWith('over ')) {
+    const projected = projectedGameTotal(input);
+    if (projected !== null && input.total !== null) {
+      return estimateOverProb(projected, input.total);
+    }
+  }
+  if (pickLower.startsWith('under ')) {
+    const projected = projectedGameTotal(input);
+    if (projected !== null && input.total !== null) {
+      return 1 - estimateOverProb(projected, input.total);
+    }
+  }
+  if (pickLower.includes(input.homeTeam.toLowerCase())) {
+    if (
+      input.spreadHome !== null &&
+      input.spreadHome !== 0 &&
+      pick.includes(formatSpread(input.spreadHome))
+    ) {
+      return estimateSpreadCoverProb(homeWinProb, input.spreadHome);
+    }
+    return homeWinProb;
+  }
+  if (pickLower.includes(input.awayTeam.toLowerCase())) {
+    if (
+      input.spreadAway !== null &&
+      input.spreadAway !== 0 &&
+      pick.includes(formatSpread(input.spreadAway))
+    ) {
+      return estimateSpreadCoverProb(awayWinProb, input.spreadAway);
+    }
+    return awayWinProb;
+  }
+
+  return Math.max(homeWinProb, awayWinProb);
+}
+
 export function resolveMlbPick(
   input: MlbPickInput,
   options: { allowStatsFallback: boolean },

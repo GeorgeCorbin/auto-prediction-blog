@@ -3,7 +3,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getArticleAuthor } from '@/lib/authors';
-import { prisma } from '@/lib/db';
+import { getLatestArticlesBySport, getMostReadArticles } from '@/lib/articles/queries';
 import { MatchupImage } from '@/components/MatchupImage';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
@@ -35,15 +35,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 async function getSportArticles(sport: string) {
-  try {
-    return await prisma.article.findMany({
-      where: { sport },
-      orderBy: { publishedAt: 'desc' },
-      include: { game: true },
-    });
-  } catch {
-    return [];
-  }
+  return getLatestArticlesBySport(sport, 1000);
 }
 
 function getExcerpt(content: string, maxLength = 160): string {
@@ -144,6 +136,7 @@ export default async function SportIndexPage({ params }: Props) {
   if (!config || !config.enabled || !isSportInSeason(config)) notFound();
 
   const articles = await getSportArticles(sport);
+  const mostReadArticles = await getMostReadArticles(5, sport);
   const featuredArticles = articles.slice(0, 3);
   const listArticles = articles.slice(3);
   const tagline =
@@ -217,10 +210,10 @@ export default async function SportIndexPage({ params }: Props) {
                 <div className="flex items-center gap-3 border-b-2 border-[#E5E7EB] pb-3 mb-4">
                   <div className="w-1 h-5 bg-[#FF6B2C] rounded-sm" />
                   <h3 className="font-sans text-[12px] font-bold text-[#1A1A1A] uppercase tracking-[0.05em]">
-                    Latest Posts
+                    Most Read
                   </h3>
                 </div>
-                {articles.slice(0, 5).map((article, i) => (
+                {mostReadArticles.map((article, i) => (
                   <Link
                     key={article.id}
                     href={`/${sport}/${article.slug}`}

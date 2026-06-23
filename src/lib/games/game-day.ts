@@ -4,7 +4,7 @@ import type { SportConfig } from '@/lib/sports/config';
 /** MLB schedule and publishing use US Eastern calendar dates. */
 export const GAME_DAY_TIMEZONE = 'America/New_York';
 
-function getEasternHour(now: Date): number {
+export function getEasternHour(now: Date): number {
   const hour = Number.parseInt(
     now.toLocaleString('en-US', {
       timeZone: GAME_DAY_TIMEZONE,

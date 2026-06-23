@@ -11,6 +11,12 @@ import { pickAuthorForGame } from '@/lib/authors';
 import { fetchEspnGameSummary } from '@/lib/espn/client';
 import { getSportModule } from '@/lib/sports/registry';
 import { buildArticleSlug } from '@/lib/sports/pipeline';
+import {
+  getInterArticleDelayMs,
+  getMaxArticlesPerRun,
+  prioritizeGamesForPublishing,
+  sleep,
+} from '@/lib/articles/publish-schedule';
 
 export async function generateArticles(): Promise<void> {
   const now = new Date();
@@ -60,12 +66,23 @@ export async function generateArticles(): Promise<void> {
   console.log(`AI config: ${describeAiConfig(getActiveAiConfig())}`);
   console.log(`Found ${eligibleReady.length} READY game(s) within publishing window.`);
 
-  const sportKeys = [...new Set(eligibleReady.map((g) => g.sport))];
+  const prioritized = prioritizeGamesForPublishing(eligibleReady);
+  const maxThisRun = getMaxArticlesPerRun(prioritized.length, now);
+  const gamesToPublish = prioritized.slice(0, maxThisRun);
+  const deferredCount = prioritized.length - gamesToPublish.length;
+
+  if (deferredCount > 0) {
+    console.log(
+      `[generate-articles] Publishing ${gamesToPublish.length} now, ${deferredCount} remain READY for next run`,
+    );
+  }
+
+  const sportKeys = [...new Set(gamesToPublish.map((g) => g.sport))];
   for (const sportKey of sportKeys) {
     const sportConfig = SPORTS.find((s) => s.key === sportKey && s.enabled);
     if (!sportConfig || !isSportInSeason(sportConfig)) continue;
 
-    const sportGames = eligibleReady.filter((g) => g.sport === sportKey);
+    const sportGames = gamesToPublish.filter((g) => g.sport === sportKey);
     console.log(
       `[generate-articles] Fetching fresh odds for ${sportGames.length} ${sportConfig.label} game(s)`,
     );
@@ -88,12 +105,21 @@ export async function generateArticles(): Promise<void> {
   const refreshedById = new Map(
     (
       await prisma.game.findMany({
-        where: { id: { in: eligibleReady.map((g) => g.id) } },
+        where: { id: { in: gamesToPublish.map((g) => g.id) } },
       })
     ).map((g) => [g.id, g]),
   );
 
-  for (const game of eligibleReady) {
+  for (let i = 0; i < gamesToPublish.length; i++) {
+    if (i > 0) {
+      const delayMs = getInterArticleDelayMs(`${gamesToPublish[i].id}:${i}`);
+      console.log(
+        `[generate-articles] Staggering ${Math.round(delayMs / 1000)}s before next article`,
+      );
+      await sleep(delayMs);
+    }
+
+    const game = gamesToPublish[i];
     const refreshed = refreshedById.get(game.id) ?? game;
     const sportConfig = SPORTS.find((s) => s.key === game.sport && s.enabled);
     if (!sportConfig) {

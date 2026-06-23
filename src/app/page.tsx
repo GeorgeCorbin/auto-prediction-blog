@@ -1,7 +1,13 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { getArticleAuthor } from '@/lib/authors';
-import { prisma } from '@/lib/db';
+import {
+  getBestPredictions,
+  getLatestArticlesAllSports,
+  getLatestArticlesBySport,
+  getMostReadArticles,
+  type ArticleWithGame,
+} from '@/lib/articles/queries';
 import { MatchupImage } from '@/components/MatchupImage';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
@@ -11,19 +17,6 @@ import { formatEasternDateTimeFallback } from '@/lib/dates';
 import { getActiveSports } from '@/lib/sports/config';
 
 export const revalidate = 1800;
-
-async function getLatestArticlesBySport(sport: string, take = 5) {
-  try {
-    return await prisma.article.findMany({
-      where: { sport },
-      take,
-      orderBy: { publishedAt: 'desc' },
-      include: { game: true },
-    });
-  } catch {
-    return [];
-  }
-}
 
 function timeAgo(date: Date): string {
   const diffMs = Date.now() - date.getTime();
@@ -38,8 +31,6 @@ function getExcerpt(content: string, maxLength = 160): string {
   const first = content.split(/\n\n+/)[0]?.trim() ?? '';
   return first.length <= maxLength ? first : first.slice(0, maxLength).trimEnd() + '…';
 }
-
-type ArticleWithGame = Awaited<ReturnType<typeof getLatestArticlesBySport>>[number];
 
 function SportTag({ sport }: { sport: string }) {
   return (
@@ -210,16 +201,19 @@ function CompactRow({ article }: { article: ArticleWithGame }) {
 export default async function HomePage() {
   const activeSports = getActiveSports();
   const primarySport = activeSports[0]?.key ?? 'mlb';
-  const articles = await getLatestArticlesBySport(primarySport, 10);
-  const sportSections = await Promise.all(
-    activeSports.map(async (sport) => ({
-      sport,
-      articles: await getLatestArticlesBySport(sport.key, 4),
-    })),
-  );
-  const [featured, ...rest] = articles;
-  const sidebarArticles = articles.slice(0, 5);
-  const compactArticles = rest.slice(4, 7);
+  const [latestArticles, bestArticles, mostReadArticles, sportSections] = await Promise.all([
+    getLatestArticlesAllSports(10),
+    getBestPredictions(3),
+    getMostReadArticles(5),
+    Promise.all(
+      activeSports.map(async (sport) => ({
+        sport,
+        articles: await getLatestArticlesBySport(sport.key, 4),
+      })),
+    ),
+  ]);
+  const [featured] = latestArticles;
+  const latestSidebarArticles = latestArticles.slice(0, 5);
 
   return (
     <>
@@ -230,7 +224,7 @@ export default async function HomePage() {
           <AdSlot position="top" />
         </div>
 
-        {articles.length === 0 ? (
+        {latestArticles.length === 0 ? (
           <EmptyState />
         ) : (
           <>
@@ -239,7 +233,7 @@ export default async function HomePage() {
               <aside className="hidden lg:block">
                 <SectionHeading>Latest Predictions</SectionHeading>
                 <div>
-                  {sidebarArticles.map((article, i) => (
+                  {latestSidebarArticles.map((article, i) => (
                     <SidebarItem key={article.id} article={article} index={i} />
                   ))}
                 </div>
@@ -268,9 +262,9 @@ export default async function HomePage() {
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-10">
               <section>
                 <SectionHeading>Best Predictions</SectionHeading>
-                {compactArticles.length > 0 ? (
+                {bestArticles.length > 0 ? (
                   <div>
-                    {compactArticles.map((article) => (
+                    {bestArticles.map((article) => (
                       <CompactRow key={article.id} article={article} />
                     ))}
                   </div>
@@ -282,7 +276,7 @@ export default async function HomePage() {
               <aside className="hidden lg:block">
                 <SectionHeading>Most Read Today</SectionHeading>
                 <div>
-                  {sidebarArticles.map((article, i) => (
+                  {mostReadArticles.map((article, i) => (
                     <SidebarItem key={article.id} article={article} index={i} />
                   ))}
                 </div>

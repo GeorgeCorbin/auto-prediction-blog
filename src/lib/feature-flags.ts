@@ -26,7 +26,7 @@ export const aiModel: AiPresetName = 'local';
 //  Prompts receive hasOdds from the pick result so articles skip betting-line copy
 //  when only stats were used.
 //
-export const statsPickWithoutOdds = false;
+export const statsPickWithoutOdds = true;
 
 // ─── Publishing hours (Eastern) ───────────────────────────────────────────────
 //

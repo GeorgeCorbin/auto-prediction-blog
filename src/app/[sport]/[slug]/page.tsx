@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getArticleAuthor, getAuthorInitials } from '@/lib/authors';
 import { stripRedundantPickCallouts } from '@/lib/articles/content';
+import { getLatestSportPosts, getMostReadPosts } from '@/lib/articles/queries';
 import { prisma } from '@/lib/db';
 import { AdSlot } from '@/components/AdSlot';
 import { ArticleViewTracker } from '@/components/ArticleViewTracker';
@@ -245,15 +246,26 @@ export default async function ArticlePage({ params }: Props) {
     });
   } catch { /* ignore */ }
 
-  // Most read sidebar
-  let mostRead: { id: string; title: string; sport: string; slug: string; publishedAt: Date }[] = [];
+  // Sidebar lists
+  let latestSportPosts: {
+    id: string;
+    title: string;
+    sport: string;
+    slug: string;
+    publishedAt: Date;
+  }[] = [];
+  let mostRead: {
+    id: string;
+    title: string;
+    sport: string;
+    slug: string;
+    publishedAt: Date;
+  }[] = [];
   try {
-    mostRead = await prisma.article.findMany({
-      where: { sport },
-      orderBy: { viewCount: 'desc' },
-      take: 5,
-      select: { id: true, title: true, sport: true, slug: true, publishedAt: true },
-    });
+    [latestSportPosts, mostRead] = await Promise.all([
+      getLatestSportPosts(sport, slug, 4),
+      getMostReadPosts(5),
+    ]);
   } catch { /* ignore */ }
 
   const gameDateTimeEt = formatEasternDateTimeFallback(game.scheduledAt);
@@ -536,7 +548,7 @@ export default async function ArticlePage({ params }: Props) {
                   Latest {sport.toUpperCase()} Posts
                 </h3>
               </div>
-              {mostRead.slice(0, 4).map((a) => (
+              {latestSportPosts.map((a) => (
                 <Link
                   key={a.id}
                   href={`/${a.sport}/${a.slug}`}

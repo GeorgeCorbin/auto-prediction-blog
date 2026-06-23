@@ -320,6 +320,34 @@ function pickBestValueBet(
   return { favoredTeam: chosen.favoredTeam, pickLabel: chosen.label };
 }
 
+/** Model probability that the stored pick is correct (0–1). */
+export function estimateWorldCupPickConfidence(
+  input: WorldCupPickInput,
+  pick: string,
+): number {
+  const probs = computeWinProbs(input);
+  const pickLower = pick.toLowerCase();
+
+  if (pickLower === 'draw') return probs.drawProb;
+
+  if (pickLower.startsWith('over ')) {
+    const projected = projectedGoals(input);
+    if (projected !== null && input.total !== null) {
+      return estimateOverProb(projected, input.total);
+    }
+  }
+  if (pickLower.startsWith('under ')) {
+    const projected = projectedGoals(input);
+    if (projected !== null && input.total !== null) {
+      return 1 - estimateOverProb(projected, input.total);
+    }
+  }
+  if (pickLower.includes(input.homeTeam.toLowerCase())) return probs.homeWinProb;
+  if (pickLower.includes(input.awayTeam.toLowerCase())) return probs.awayWinProb;
+
+  return Math.max(probs.homeWinProb, probs.drawProb, probs.awayWinProb);
+}
+
 export function resolveWorldCupPick(
   input: WorldCupPickInput,
   options: { allowStatsFallback: boolean },
