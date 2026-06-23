@@ -1,118 +1,33 @@
 import 'dotenv/config';
-import { fetchEspnScoreboard } from '@/lib/espn/client';
 import {
-  filterGameDayGames,
   getTodayEspnDateStr,
-  isGameDay,
+  shouldDemoteReadyGame,
 } from '@/lib/games/game-day';
-import { ENABLED_SPORTS } from '@/lib/sports/config';
+import { getActiveSports, getSportConfig } from '@/lib/sports/config';
+import { getSportModule } from '@/lib/sports/registry';
 import { prisma } from '@/lib/db';
-
-// ---------------------------------------------------------------------------
-// Core pipeline
-// ---------------------------------------------------------------------------
 
 export async function scanGames(): Promise<void> {
   const todayDateStr = getTodayEspnDateStr();
+  const now = new Date();
 
-  // Demote games that were marked READY before their game day (legacy early scans)
   const earlyReady = await prisma.game.findMany({
     where: { status: 'READY' },
-    select: { id: true, scheduledAt: true },
+    select: { id: true, scheduledAt: true, sport: true },
   });
   for (const g of earlyReady) {
-    if (!isGameDay(g.scheduledAt)) {
-      await prisma.game.update({ where: { id: g.id }, data: { status: 'SCHEDULED' } });
-    }
+    const sport = getSportConfig(g.sport);
+    if (!sport || !shouldDemoteReadyGame(g.scheduledAt, sport, now)) continue;
+
+    await prisma.game.update({ where: { id: g.id }, data: { status: 'SCHEDULED' } });
   }
 
-  for (const sport of ENABLED_SPORTS) {
-    console.log(
-      `\n[scan-games] Fetching ESPN scoreboard for ${sport.label} (${todayDateStr}, Eastern)`,
-    );
-
-    const games = await fetchEspnScoreboard(sport, [todayDateStr]);
-    const gameDayGames = filterGameDayGames(games);
-
-    console.log(
-      `[scan-games] ESPN returned ${games.length} ${sport.label} games, ${gameDayGames.length} on today's slate`,
-    );
-
-    if (gameDayGames.length === 0) continue;
-
-    // ------------------------------------------------------------------
-    // Step 1: Upsert today's games (pitchers + team stats)
-    // ------------------------------------------------------------------
-    for (const g of gameDayGames) {
-      await prisma.game.upsert({
-        where: { espnEventId: g.espnEventId },
-        create: {
-          espnEventId: g.espnEventId,
-          homeTeam: g.homeTeam,
-          awayTeam: g.awayTeam,
-          homeTeamAbbr: g.homeTeamAbbr,
-          awayTeamAbbr: g.awayTeamAbbr,
-          scheduledAt: g.scheduledAt,
-          sport: sport.key,
-          status: 'SCHEDULED',
-          homePitcher: g.homePitcher,
-          awayPitcher: g.awayPitcher,
-          homePitcherStats: g.homePitcherStats ?? undefined,
-          awayPitcherStats: g.awayPitcherStats ?? undefined,
-          homeStats: g.homeStats,
-          awayStats: g.awayStats,
-        },
-        update: {
-          homeTeam: g.homeTeam,
-          awayTeam: g.awayTeam,
-          homeTeamAbbr: g.homeTeamAbbr,
-          awayTeamAbbr: g.awayTeamAbbr,
-          scheduledAt: g.scheduledAt,
-          homePitcher: g.homePitcher,
-          awayPitcher: g.awayPitcher,
-          homePitcherStats: g.homePitcherStats ?? undefined,
-          awayPitcherStats: g.awayPitcherStats ?? undefined,
-          homeStats: g.homeStats,
-          awayStats: g.awayStats,
-        },
-      });
-    }
-
-    // ------------------------------------------------------------------
-    // Step 2: Mark eligible games as READY (odds fetched at publish time)
-    // ------------------------------------------------------------------
-    const now = new Date();
-    let readyCount = 0;
-
-    for (const g of gameDayGames) {
-      const hasPitchers = g.homePitcher !== null && g.awayPitcher !== null;
-      const isFuture = g.scheduledAt > now;
-
-      if (!hasPitchers || !isFuture) continue;
-
-      // Only promote SCHEDULED games — never re-process PUBLISHED ones
-      const updated = await prisma.game.updateMany({
-        where: {
-          espnEventId: g.espnEventId,
-          status: 'SCHEDULED',
-        },
-        data: { status: 'READY' },
-      });
-
-      if (updated.count > 0) readyCount++;
-    }
-
-    console.log(
-      `[scan-games] Processed ${gameDayGames.length} ${sport.label} games, ${readyCount} marked READY`,
-    );
+  for (const sport of getActiveSports()) {
+    await getSportModule(sport.key).scanGameDay(sport, todayDateStr);
   }
 
   console.log('\n[scan-games] Done.');
 }
-
-// ---------------------------------------------------------------------------
-// Standalone entry point
-// ---------------------------------------------------------------------------
 
 if (require.main === module) {
   scanGames()

@@ -1,35 +1,44 @@
 import 'dotenv/config';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
-import { SPORTS } from '@/lib/sports/config';
+import { SPORTS, isSportInSeason } from '@/lib/sports/config';
 import { describeAiConfig, getActiveAiConfig } from '@/lib/ai';
 import { generateArticle } from '@/lib/ai/generator';
-import { MlbGameContext } from '@/lib/ai/prompts/mlb';
-import { isStatsPickWithoutOddsEnabled } from '@/lib/feature-flags';
-import { filterGameDayGames } from '@/lib/games/game-day';
+import { getPickOptions } from '@/lib/feature-flags';
+import { filterGamesForSport, isWithinPublishingHours } from '@/lib/games/game-day';
 import { fetchAndPersistOddsForGames } from '@/lib/odds/persist-odds';
-import { resolveMlbPick } from '@/lib/picks/mlb';
 import { pickAuthorForGame } from '@/lib/authors';
 import { fetchEspnGameSummary } from '@/lib/espn/client';
-
-function buildSlug(
-  awayTeamAbbr: string,
-  homeTeamAbbr: string,
-  scheduledAt: Date
-): string {
-  const month = scheduledAt.toLocaleDateString('en-US', { month: 'long' }).toLowerCase();
-  const day = scheduledAt.getDate();
-  const year = scheduledAt.getFullYear();
-  return `${awayTeamAbbr.toLowerCase()}-vs-${homeTeamAbbr.toLowerCase()}-prediction-${month}-${day}-${year}`;
-}
-
-function safeJsonRecord(raw: unknown): Record<string, string> {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-  return Object.fromEntries(
-    Object.entries(raw as Record<string, unknown>).map(([k, v]) => [k, String(v)])
-  );
-}
+import { getSportModule } from '@/lib/sports/registry';
+import { buildArticleSlug } from '@/lib/sports/pipeline';
+import {
+  canPublishMlbGameNow,
+  getMlbEarliestPublishTime,
+} from '@/lib/sports/mlb/publish-schedule';
+import {
+  getInterArticleDelayMs,
+  getMaxArticlesPerRun,
+  prioritizeGamesForPublishing,
+  sleep,
+} from '@/lib/articles/publish-schedule';
 
 export async function generateArticles(): Promise<void> {
+  const now = new Date();
+
+  if (!isWithinPublishingHours(now)) {
+    console.log(
+      '[generate-articles] Outside publishing hours (6am–11pm ET) — skipping, READY games unchanged',
+    );
+    return;
+  }
+
+  const pickOptions = getPickOptions();
+  console.log(
+    `[generate-articles] Pick mode: ${
+      pickOptions.allowStatsFallback ? 'stats fallback allowed' : 'odds required'
+    }`,
+  );
+
   const readyGames = await prisma.game.findMany({
     where: { status: 'READY' },
   });
@@ -39,30 +48,67 @@ export async function generateArticles(): Promise<void> {
     return;
   }
 
-  const gameDayReady = filterGameDayGames(readyGames);
+  const eligibleReady = readyGames.filter((game) => {
+    const sportConfig = SPORTS.find((s) => s.key === game.sport && s.enabled);
+    if (!sportConfig) return false;
+    return filterGamesForSport([game], sportConfig, now).length > 0;
+  });
 
-  if (gameDayReady.length === 0) {
+  const mlbScheduleGames =
+    eligibleReady.some((g) => g.sport === 'mlb')
+      ? await prisma.game.findMany({
+          where: {
+            sport: 'mlb',
+            scheduledAt: { gt: new Date(now.getTime() - 26 * 60 * 60 * 1000) },
+          },
+          select: { id: true, scheduledAt: true },
+        })
+      : [];
+
+  const publishableReady = eligibleReady.filter((game) => {
+    if (game.sport !== 'mlb') return true;
+    if (canPublishMlbGameNow(game, mlbScheduleGames, now)) return true;
+
+    const earliest = getMlbEarliestPublishTime(game, mlbScheduleGames);
     console.log(
-      `[generate-articles] Skipping — ${readyGames.length} READY game(s) but none on today's slate`,
+      `[generate-articles] Holding ${game.awayTeam} @ ${game.homeTeam} until ${earliest.toISOString()}`,
+    );
+    return false;
+  });
+
+  if (publishableReady.length === 0) {
+    console.log(
+      `[generate-articles] Skipping — ${readyGames.length} READY game(s) but none eligible to publish now`,
     );
     return;
   }
 
-  if (gameDayReady.length < readyGames.length) {
+  if (publishableReady.length < readyGames.length) {
     console.log(
-      `[generate-articles] Ignoring ${readyGames.length - gameDayReady.length} READY game(s) not on today's slate`,
+      `[generate-articles] Ignoring ${readyGames.length - publishableReady.length} READY game(s) outside publishing window or on hold`,
     );
   }
 
   console.log(`AI config: ${describeAiConfig(getActiveAiConfig())}`);
-  console.log(`Found ${gameDayReady.length} game-day READY game(s).`);
+  console.log(`Found ${publishableReady.length} READY game(s) eligible to publish now.`);
 
-  const sportKeys = [...new Set(gameDayReady.map((g) => g.sport))];
+  const prioritized = prioritizeGamesForPublishing(publishableReady);
+  const maxThisRun = getMaxArticlesPerRun(prioritized.length, now);
+  const gamesToPublish = prioritized.slice(0, maxThisRun);
+  const deferredCount = prioritized.length - gamesToPublish.length;
+
+  if (deferredCount > 0) {
+    console.log(
+      `[generate-articles] Publishing ${gamesToPublish.length} now, ${deferredCount} remain READY for next run`,
+    );
+  }
+
+  const sportKeys = [...new Set(gamesToPublish.map((g) => g.sport))];
   for (const sportKey of sportKeys) {
     const sportConfig = SPORTS.find((s) => s.key === sportKey && s.enabled);
-    if (!sportConfig) continue;
+    if (!sportConfig || !isSportInSeason(sportConfig)) continue;
 
-    const sportGames = gameDayReady.filter((g) => g.sport === sportKey);
+    const sportGames = gamesToPublish.filter((g) => g.sport === sportKey);
     console.log(
       `[generate-articles] Fetching fresh odds for ${sportGames.length} ${sportConfig.label} game(s)`,
     );
@@ -85,14 +131,21 @@ export async function generateArticles(): Promise<void> {
   const refreshedById = new Map(
     (
       await prisma.game.findMany({
-        where: { id: { in: gameDayReady.map((g) => g.id) } },
+        where: { id: { in: gamesToPublish.map((g) => g.id) } },
       })
     ).map((g) => [g.id, g]),
   );
 
-  const allowStatsFallback = isStatsPickWithoutOddsEnabled();
+  for (let i = 0; i < gamesToPublish.length; i++) {
+    if (i > 0) {
+      const delayMs = getInterArticleDelayMs(`${gamesToPublish[i].id}:${i}`);
+      console.log(
+        `[generate-articles] Staggering ${Math.round(delayMs / 1000)}s before next article`,
+      );
+      await sleep(delayMs);
+    }
 
-  for (const game of gameDayReady) {
+    const game = gamesToPublish[i];
     const refreshed = refreshedById.get(game.id) ?? game;
     const sportConfig = SPORTS.find((s) => s.key === game.sport && s.enabled);
     if (!sportConfig) {
@@ -100,66 +153,26 @@ export async function generateArticles(): Promise<void> {
       continue;
     }
 
-    const homeStats = safeJsonRecord(refreshed.homeStats);
-    const awayStats = safeJsonRecord(refreshed.awayStats);
-    const homePitcherStats = safeJsonRecord(refreshed.homePitcherStats);
-    const awayPitcherStats = safeJsonRecord(refreshed.awayPitcherStats);
+    if (!isSportInSeason(sportConfig, refreshed.scheduledAt)) {
+      console.log(
+        `Skipping game ${refreshed.id}: ${sportConfig.label} outside active tournament window`,
+      );
+      continue;
+    }
 
-    const pick = resolveMlbPick(
-      {
-        homeTeam: refreshed.homeTeam,
-        awayTeam: refreshed.awayTeam,
-        homeRecord: homeStats.record ?? '',
-        awayRecord: awayStats.record ?? '',
-        homeStats,
-        awayStats,
-        homePitcherStats,
-        awayPitcherStats,
-        spreadHome: refreshed.spreadHome,
-        spreadAway: refreshed.spreadAway,
-        spreadHomePrice: refreshed.spreadHomePrice,
-        spreadAwayPrice: refreshed.spreadAwayPrice,
-        moneylineHome: refreshed.moneylineHome,
-        moneylineAway: refreshed.moneylineAway,
-        total: refreshed.total,
-        overPrice: refreshed.overPrice,
-        underPrice: refreshed.underPrice,
-      },
-      { allowStatsFallback },
-    );
+    const mod = getSportModule(game.sport);
+    const pick = mod.resolvePick(refreshed, pickOptions);
 
     if (!pick) {
       console.log(`Skipping game ${refreshed.id}: no odds and stats fallback is disabled`);
       continue;
     }
 
-    const context: MlbGameContext = {
-      homeTeam: refreshed.homeTeam,
-      awayTeam: refreshed.awayTeam,
-      homeTeamAbbr: refreshed.homeTeamAbbr,
-      awayTeamAbbr: refreshed.awayTeamAbbr,
-      scheduledAt: refreshed.scheduledAt,
-      homeRecord: homeStats.record ?? '',
-      awayRecord: awayStats.record ?? '',
-      homeStats,
-      awayStats,
-      homePitcher: refreshed.homePitcher ?? 'TBD',
-      awayPitcher: refreshed.awayPitcher ?? 'TBD',
-      homePitcherStats,
-      awayPitcherStats,
-      homeMoneyline: refreshed.moneylineHome ?? 0,
-      awayMoneyline: refreshed.moneylineAway ?? 0,
-      spreadHome: refreshed.spreadHome ?? 0,
-      spreadAway: refreshed.spreadAway ?? 0,
-      total: refreshed.total ?? 0,
-      favoredTeam: pick.favoredTeam,
-      hasOdds: pick.hasOdds,
-      pickLabel: pick.pickLabel,
-    };
+    const context = mod.buildPromptContext(refreshed, pick);
 
     try {
       const [result, summary] = await Promise.all([
-        generateArticle(sportConfig, context),
+        generateArticle(sportConfig, mod, context),
         fetchEspnGameSummary(
           refreshed.espnEventId,
           sportConfig,
@@ -167,18 +180,24 @@ export async function generateArticles(): Promise<void> {
           refreshed.homeTeam,
         ),
       ]);
-      const { venueImage, homePitcherStats: richHome, awayPitcherStats: richAway } = summary;
-      const slug = buildSlug(refreshed.awayTeamAbbr, refreshed.homeTeamAbbr, refreshed.scheduledAt);
-      const author = pickAuthorForGame(refreshed.homeTeamAbbr, refreshed.awayTeamAbbr, slug);
+      const { venueImage } = summary;
+      const slug = buildArticleSlug(
+        refreshed.awayTeamAbbr,
+        refreshed.homeTeamAbbr,
+        refreshed.scheduledAt,
+      );
+      const author = pickAuthorForGame(
+        refreshed.sport,
+        refreshed.homeTeamAbbr,
+        refreshed.awayTeamAbbr,
+        slug,
+      );
 
-      // Update Game with richer pitcher stats from summary if available
-      if (richHome || richAway) {
+      const enrich = mod.enrichFromSummary?.(refreshed, summary);
+      if (enrich?.sportData) {
         await prisma.game.update({
           where: { id: refreshed.id },
-          data: {
-            ...(richHome ? { homePitcherStats: richHome as unknown as import('@prisma/client').Prisma.InputJsonValue } : {}),
-            ...(richAway ? { awayPitcherStats: richAway as unknown as import('@prisma/client').Prisma.InputJsonValue } : {}),
-          },
+          data: { sportData: enrich.sportData as Prisma.InputJsonValue },
         });
       }
 

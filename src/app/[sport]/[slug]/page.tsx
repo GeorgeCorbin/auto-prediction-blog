@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getArticleAuthor, getAuthorInitials } from '@/lib/authors';
 import { stripRedundantPickCallouts } from '@/lib/articles/content';
+import { getLatestSportPosts, getMostReadPosts } from '@/lib/articles/queries';
 import { prisma } from '@/lib/db';
 import { AdSlot } from '@/components/AdSlot';
 import { ArticleViewTracker } from '@/components/ArticleViewTracker';
@@ -14,6 +15,7 @@ import { ShareButtons } from '@/components/ShareButtons';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
 import { formatAmericanOdds, formatSpreadPoint } from '@/lib/odds/format';
+import { SportArticlePanels } from '@/lib/sports/article-panels';
 
 export const revalidate = 3600;
 
@@ -88,70 +90,6 @@ function getExcerpt(content: string, maxLength = 120): string {
   return first.length <= maxLength ? first : first.slice(0, maxLength).trimEnd() + '…';
 }
 
-type PitcherStats = {
-  record: string | null;
-  throws: string | null;
-  ERA: string | null;
-  WHIP: string | null;
-  IP: string | null;
-  K: string | null;
-  BB: string | null;
-  H: string | null;
-  HR: string | null;
-};
-
-function parsePitcherStats(raw: unknown): PitcherStats {
-  const empty: PitcherStats = {
-    record: null, throws: null, ERA: null, WHIP: null, IP: null,
-    K: null, BB: null, H: null, HR: null,
-  };
-  if (!raw || typeof raw !== 'object') return empty;
-  const s = raw as Record<string, unknown>;
-
-  const str = (key: string): string | null => {
-    const v = s[key];
-    return v != null ? String(v) : null;
-  };
-
-  // Handle both rich stats (from summary API) and legacy scoreboard stats
-  let record = str('record');
-  if (record) {
-    // Strip "(W-L, ERA)" format down to just "W-L"
-    const m = record.match(/\(?([\d]+-[\d]+)/);
-    record = m ? m[1] : record.replace(/^\(/, '').replace(/,.*$/, '').trim();
-  } else if (str('W') && str('L')) {
-    record = `${str('W')}-${str('L')}`;
-  }
-
-  // IP: prefer stored value, else compute from FI+PI
-  let ip = str('IP');
-  if (!ip) {
-    const fi = parseFloat(str('FI') ?? '0');
-    const pi = parseFloat(str('PI') ?? '0');
-    if (fi > 0 || pi > 0) ip = (fi + pi / 3).toFixed(1);
-  }
-
-  return {
-    record,
-    throws: str('throws'),
-    ERA: str('ERA') ?? str('era'),
-    WHIP: str('WHIP'),
-    IP: ip,
-    K: str('K'),
-    BB: str('BB'),
-    H: str('H'),
-    HR: str('HR'),
-  };
-}
-
-/** Compute K/9 or BB/9 from counting stat + IP string. */
-function perNine(stat: string | null, ip: string | null): string | null {
-  const s = parseFloat(stat ?? '');
-  const i = parseFloat(ip ?? '');
-  if (!isFinite(s) || !isFinite(i) || i === 0) return null;
-  return (s / i * 9).toFixed(1);
-}
-
 type ArticleWithGame = Awaited<
   ReturnType<typeof prisma.article.findUnique>
 > & { game: Awaited<ReturnType<typeof prisma.game.findUnique>> };
@@ -186,47 +124,6 @@ function OddsRow({
       >
         {value ?? 'N/A'}
       </span>
-    </div>
-  );
-}
-
-/* ─── Pitcher stat row ───────────────────────────────────────── */
-function PitcherStat({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div className="flex items-center py-2 border-b border-[#E5E7EB] last:border-0">
-      <span className="text-[12px] text-[#9CA3AF]">{label}</span>
-      <span className="ml-auto font-mono text-[13px] font-bold text-[#1A1A1A]">
-        {value ?? '—'}
-      </span>
-    </div>
-  );
-}
-
-/* ─── Pitcher panel (one side of the VS card) ───────────────── */
-function PitcherPanel({ team, pitcher, stats }: {
-  team: string;
-  pitcher: string | null;
-  stats: PitcherStats;
-}) {
-  const handPrefix = stats.throws ? `${stats.throws}HP ` : '';
-  const k9 = perNine(stats.K, stats.IP);
-  const bb9 = perNine(stats.BB, stats.IP);
-  return (
-    <div className="p-5 bg-[#F9FAFB]">
-      <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#4B5563] mb-1">{team}</p>
-      <p className="font-serif text-[17px] font-bold text-[#1A1A1A] mb-4">
-        {handPrefix}{pitcher ?? 'TBD'}
-      </p>
-      <PitcherStat label="Record"  value={stats.record} />
-      <PitcherStat label="ERA"     value={stats.ERA} />
-      {stats.WHIP && <PitcherStat label="WHIP" value={stats.WHIP} />}
-      {stats.IP   && <PitcherStat label="IP"   value={stats.IP} />}
-      {/* {stats.K    && <PitcherStat label="K"    value={stats.K} />}
-      {stats.BB   && <PitcherStat label="BB"   value={stats.BB} />}
-      {stats.H    && <PitcherStat label="H"    value={stats.H} />}
-      {stats.HR   && <PitcherStat label="HR"   value={stats.HR} />} */}
-      {k9         && <PitcherStat label="K/9"  value={k9} />}
-      {bb9        && <PitcherStat label="BB/9" value={bb9} />}
     </div>
   );
 }
@@ -274,13 +171,19 @@ function RelatedCard({
 }) {
   return (
     <Link href={`/${article.sport}/${article.slug}`} className="group block">
-      <div className="relative w-full bg-[#D1D5DB] mb-3" style={{ aspectRatio: '4/3' }}>
-        {article.featuredImageUrl && (
+      <div className="relative w-full bg-[#D1D5DB] mb-3 overflow-hidden" style={{ aspectRatio: '4/3' }}>
+        {article.featuredImageUrl ? (
           <Image
             src={article.featuredImageUrl}
             alt={article.imageAlt ?? article.title}
             fill
             style={{ objectFit: 'cover' }}
+            sizes="(max-width: 640px) 100vw, 33vw"
+          />
+        ) : (
+          <MatchupImage
+            slug={article.slug}
+            alt={article.imageAlt ?? article.title}
             sizes="(max-width: 640px) 100vw, 33vw"
           />
         )}
@@ -343,15 +246,26 @@ export default async function ArticlePage({ params }: Props) {
     });
   } catch { /* ignore */ }
 
-  // Most read sidebar
-  let mostRead: { id: string; title: string; sport: string; slug: string; publishedAt: Date }[] = [];
+  // Sidebar lists
+  let latestSportPosts: {
+    id: string;
+    title: string;
+    sport: string;
+    slug: string;
+    publishedAt: Date;
+  }[] = [];
+  let mostRead: {
+    id: string;
+    title: string;
+    sport: string;
+    slug: string;
+    publishedAt: Date;
+  }[] = [];
   try {
-    mostRead = await prisma.article.findMany({
-      where: { sport },
-      orderBy: { viewCount: 'desc' },
-      take: 5,
-      select: { id: true, title: true, sport: true, slug: true, publishedAt: true },
-    });
+    [latestSportPosts, mostRead] = await Promise.all([
+      getLatestSportPosts(sport, slug, 4),
+      getMostReadPosts(5),
+    ]);
   } catch { /* ignore */ }
 
   const gameDateTimeEt = formatEasternDateTimeFallback(game.scheduledAt);
@@ -368,6 +282,8 @@ export default async function ArticlePage({ params }: Props) {
   // Odds
   const mlHome = formatAmericanOdds(game.moneylineHome);
   const mlAway = formatAmericanOdds(game.moneylineAway);
+  const mlDraw = formatAmericanOdds(game.moneylineDraw);
+  const isSoccer = sport === 'world-cup';
   const awaySpread = formatSpreadPoint(game.spreadAway);
   const homeSpread = formatSpreadPoint(game.spreadHome);
   const awaySpreadPrice = formatAmericanOdds(game.spreadAwayPrice);
@@ -379,14 +295,10 @@ export default async function ArticlePage({ params }: Props) {
   const hasOdds =
     mlHome ||
     mlAway ||
+    mlDraw ||
     awaySpread ||
     homeSpread ||
     total;
-
-  // Pitchers
-  const homeStats = parsePitcherStats(game.homePitcherStats);
-  const awayStats = parsePitcherStats(game.awayPitcherStats);
-  const hasPitchers = game.homePitcher || game.awayPitcher;
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -520,13 +432,14 @@ export default async function ArticlePage({ params }: Props) {
             {hasOdds && (
               <section className="mb-8">
                 <h2 className="font-serif text-[22px] font-bold text-[#1A1A1A] mb-4">
-                  Tonight&apos;s Odds
+                  {isSoccer ? "Today's Odds" : "Tonight's Odds"}
                 </h2>
                 <div className="border border-[#E5E7EB] rounded overflow-hidden">
                   <OddsRow label="MONEYLINE" isHeader />
                   <OddsRow label={game.awayTeam} value={mlAway} />
+                  {isSoccer && <OddsRow label="Draw" value={mlDraw} />}
                   <OddsRow label={game.homeTeam} value={mlHome} />
-                  {(awaySpread || homeSpread) && (
+                  {!isSoccer && (awaySpread || homeSpread) && (
                     <>
                       <OddsRow label="RUN LINE" isHeader />
                       {awaySpread && (
@@ -545,7 +458,7 @@ export default async function ArticlePage({ params }: Props) {
                   )}
                   {total && (
                     <>
-                      <OddsRow label="OVER/UNDER" isHeader />
+                      <OddsRow label={isSoccer ? 'GOALS OVER/UNDER' : 'OVER/UNDER'} isHeader />
                       <OddsRow label={`Over ${total}`} value={overPrice} />
                       <OddsRow label={`Under ${total}`} value={underPrice} />
                     </>
@@ -554,24 +467,7 @@ export default async function ArticlePage({ params }: Props) {
               </section>
             )}
 
-            {/* Probable pitchers */}
-            {hasPitchers && (
-              <section className="mb-8">
-                <h2 className="font-serif text-[22px] font-bold text-[#1A1A1A] mb-4">
-                  Probable Pitchers
-                </h2>
-                <div className="border border-[#E5E7EB] rounded overflow-hidden grid grid-cols-[1fr_48px_1fr]">
-                  <PitcherPanel team={game.awayTeam} pitcher={game.awayPitcher} stats={awayStats} />
-                  {/* VS divider */}
-                  <div className="flex items-center justify-center bg-[#E5E7EB]">
-                    <span className="text-[11px] font-bold text-[#9CA3AF] tracking-widest [writing-mode:vertical-lr]">
-                      VS
-                    </span>
-                  </div>
-                  <PitcherPanel team={game.homeTeam} pitcher={game.homePitcher} stats={homeStats} />
-                </div>
-              </section>
-            )}
+            <SportArticlePanels game={game} />
 
             {/* Article body paragraphs */}
             <div className="mb-8 space-y-4">
@@ -596,8 +492,8 @@ export default async function ArticlePage({ params }: Props) {
                 {article.pick}
               </p>
               <p className="text-[14px] text-[#4B5563] leading-relaxed">
-                Based on the pitching matchup, recent form, and line value, {article.pick} is our
-                top play for this game. Back it with 1–2 units.
+                Based on the matchup analysis, recent form, and line value, {article.pick} is our
+                top play for this game.
               </p>
             </section>
 
@@ -652,7 +548,7 @@ export default async function ArticlePage({ params }: Props) {
                   Latest {sport.toUpperCase()} Posts
                 </h3>
               </div>
-              {mostRead.slice(0, 4).map((a) => (
+              {latestSportPosts.map((a) => (
                 <Link
                   key={a.id}
                   href={`/${a.sport}/${a.slug}`}

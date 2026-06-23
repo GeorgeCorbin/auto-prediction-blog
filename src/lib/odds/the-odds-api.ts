@@ -1,7 +1,9 @@
 import axios from 'axios';
 import { z } from 'zod';
-import { filterGameDayGames } from '@/lib/games/game-day';
 import type { GameOdds, OddsProvider } from './provider';
+
+/** Max hours between Odds API commence_time and ESPN scheduledAt when matching lines. */
+const ODDS_MATCH_WINDOW_HOURS = 120;
 
 // ---------------------------------------------------------------------------
 // Zod schemas for The Odds API v4 response
@@ -63,11 +65,11 @@ function teamsMatch(a: string, b: string): boolean {
   return false;
 }
 
-/** Returns true when the odds game falls within ±1 day of the ESPN scheduledAt. */
+/** True when odds commence_time is close enough to ESPN kickoff (supports multi-day lead). */
 function withinDateWindow(oddsCommenceTime: string, scheduledAt: Date): boolean {
   const oddsDate = new Date(oddsCommenceTime);
   const diffMs = Math.abs(oddsDate.getTime() - scheduledAt.getTime());
-  return diffMs <= 36 * 60 * 60 * 1000; // 36-hour window to handle time zone edge cases
+  return diffMs <= ODDS_MATCH_WINDOW_HOURS * 60 * 60 * 1000;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,22 +80,26 @@ function extractMoneylines(
   markets: z.infer<typeof MarketSchema>[],
   homeTeam: string,
   awayTeam: string,
-): { homeMoneyline: number | null; awayMoneyline: number | null } {
+): { homeMoneyline: number | null; awayMoneyline: number | null; drawMoneyline: number | null } {
   const h2h = markets.find((m) => m.key === 'h2h');
-  if (!h2h) return { homeMoneyline: null, awayMoneyline: null };
+  if (!h2h) return { homeMoneyline: null, awayMoneyline: null, drawMoneyline: null };
 
   let homeMoneyline: number | null = null;
   let awayMoneyline: number | null = null;
+  let drawMoneyline: number | null = null;
 
   for (const outcome of h2h.outcomes) {
-    if (teamsMatch(outcome.name, homeTeam)) {
+    const nameLower = outcome.name.toLowerCase();
+    if (nameLower === 'draw') {
+      drawMoneyline = outcome.price ?? null;
+    } else if (teamsMatch(outcome.name, homeTeam)) {
       homeMoneyline = outcome.price ?? null;
     } else if (teamsMatch(outcome.name, awayTeam)) {
       awayMoneyline = outcome.price ?? null;
     }
   }
 
-  return { homeMoneyline, awayMoneyline };
+  return { homeMoneyline, awayMoneyline, drawMoneyline };
 }
 
 function extractSpreads(
@@ -159,12 +165,19 @@ function extractTotals(
 function determineFavoredTeam(
   homeMoneyline: number | null,
   awayMoneyline: number | null,
-): 'home' | 'away' | null {
-  if (homeMoneyline === null || awayMoneyline === null) return null;
-  // Lower (more negative) moneyline = favored
-  if (homeMoneyline < awayMoneyline) return 'home';
-  if (awayMoneyline < homeMoneyline) return 'away';
-  return null; // pick-em
+  drawMoneyline: number | null = null,
+): 'home' | 'away' | 'draw' | null {
+  const candidates: Array<{ team: 'home' | 'away' | 'draw'; ml: number }> = [];
+  if (homeMoneyline !== null) candidates.push({ team: 'home', ml: homeMoneyline });
+  if (awayMoneyline !== null) candidates.push({ team: 'away', ml: awayMoneyline });
+  if (drawMoneyline !== null) candidates.push({ team: 'draw', ml: drawMoneyline });
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => a.ml - b.ml);
+  const lowest = candidates[0].ml;
+  const tied = candidates.filter((c) => c.ml === lowest);
+  if (tied.length > 1) return null;
+  return candidates[0].team;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,12 +206,6 @@ export class TheOddsApiProvider implements OddsProvider {
 
     if (games.length === 0) return result;
 
-    const gameDayGames = filterGameDayGames(games);
-    if (gameDayGames.length === 0) {
-      console.log('[odds] Skipping odds fetch — no game-day matchups in request');
-      return result;
-    }
-
     let oddsGames: z.infer<typeof OddsGameSchema>[];
     try {
       const response = await axios.get(`${this.baseUrl}/${sportOddsKey}/odds`, {
@@ -223,7 +230,7 @@ export class TheOddsApiProvider implements OddsProvider {
       return result;
     }
 
-    for (const espnGame of gameDayGames) {
+    for (const espnGame of games) {
       // Find the matching odds game by team name + date proximity
       const oddsGame = oddsGames.find(
         (og) =>
@@ -247,15 +254,13 @@ export class TheOddsApiProvider implements OddsProvider {
       const oddsHomeTeam = oddsHomeIsEspnHome ? espnGame.homeTeam : espnGame.awayTeam;
       const oddsAwayTeam = oddsHomeIsEspnHome ? espnGame.awayTeam : espnGame.homeTeam;
 
-      const { homeMoneyline: rawHome, awayMoneyline: rawAway } = extractMoneylines(
-        markets,
-        oddsHomeTeam,
-        oddsAwayTeam,
-      );
+      const { homeMoneyline: rawHome, awayMoneyline: rawAway, drawMoneyline: rawDraw } =
+        extractMoneylines(markets, oddsHomeTeam, oddsAwayTeam);
 
       // Re-orient so keys are always from ESPN's perspective
       const homeMoneyline = oddsHomeIsEspnHome ? rawHome : rawAway;
       const awayMoneyline = oddsHomeIsEspnHome ? rawAway : rawHome;
+      const moneylineDraw = rawDraw;
 
       const rawSpreads = extractSpreads(markets, oddsHomeTeam, oddsAwayTeam);
       const spreadHome = oddsHomeIsEspnHome ? rawSpreads.homeSpread : rawSpreads.awaySpread;
@@ -268,11 +273,12 @@ export class TheOddsApiProvider implements OddsProvider {
         : rawSpreads.homeSpreadPrice;
 
       const { total, overPrice, underPrice } = extractTotals(markets);
-      const favoredTeam = determineFavoredTeam(homeMoneyline, awayMoneyline);
+      const favoredTeam = determineFavoredTeam(homeMoneyline, awayMoneyline, moneylineDraw);
 
       result.set(espnGame.espnEventId, {
         homeMoneyline,
         awayMoneyline,
+        moneylineDraw,
         spreadHome,
         spreadAway,
         spreadHomePrice,

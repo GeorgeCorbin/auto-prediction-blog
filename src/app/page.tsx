@@ -1,27 +1,22 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { getArticleAuthor } from '@/lib/authors';
-import { prisma } from '@/lib/db';
+import {
+  getBestPredictions,
+  getLatestArticlesAllSports,
+  getLatestArticlesBySport,
+  getMostReadArticles,
+  type ArticleWithGame,
+} from '@/lib/articles/queries';
 import { MatchupImage } from '@/components/MatchupImage';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
 import { AdSlot } from '@/components/AdSlot';
 import { LocalDateTime } from '@/components/LocalDateTime';
 import { formatEasternDateTimeFallback } from '@/lib/dates';
+import { getActiveSports } from '@/lib/sports/config';
 
 export const revalidate = 1800;
-
-async function getLatestArticles(take = 10) {
-  try {
-    return await prisma.article.findMany({
-      take,
-      orderBy: { publishedAt: 'desc' },
-      include: { game: true },
-    });
-  } catch {
-    return [];
-  }
-}
 
 function timeAgo(date: Date): string {
   const diffMs = Date.now() - date.getTime();
@@ -37,9 +32,6 @@ function getExcerpt(content: string, maxLength = 160): string {
   return first.length <= maxLength ? first : first.slice(0, maxLength).trimEnd() + '…';
 }
 
-type ArticleWithGame = Awaited<ReturnType<typeof getLatestArticles>>[number];
-
-/* ─── Sport tag ─────────────────────────────────────────────── */
 function SportTag({ sport }: { sport: string }) {
   return (
     <span className="inline-flex items-center bg-[#FEF3EE] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#FF6B2C] rounded-sm">
@@ -48,7 +40,6 @@ function SportTag({ sport }: { sport: string }) {
   );
 }
 
-/* ─── Section heading ────────────────────────────────────────── */
 function SectionHeading({ children, href }: { children: React.ReactNode; href?: string }) {
   return (
     <div className="flex items-center gap-3 border-b-2 border-[#E5E7EB] pb-3 mb-5">
@@ -63,13 +54,11 @@ function SectionHeading({ children, href }: { children: React.ReactNode; href?: 
   );
 }
 
-/* ─── Featured hero card ─────────────────────────────────────── */
 function FeaturedCard({ article }: { article: ArticleWithGame }) {
   const game = article.game;
   const authorName = getArticleAuthor(article, game);
   return (
     <Link href={`/${article.sport}/${article.slug}`} className="group block">
-      {/* Featured image */}
       <div className="relative w-full overflow-hidden" style={{ aspectRatio: '16/9' }}>
         {article.featuredImageUrl ? (
           <Image
@@ -110,7 +99,6 @@ function FeaturedCard({ article }: { article: ArticleWithGame }) {
   );
 }
 
-/* ─── Article grid card ──────────────────────────────────────── */
 function GridCard({ article }: { article: ArticleWithGame }) {
   const game = article.game;
   const authorName = getArticleAuthor(article, game);
@@ -151,14 +139,7 @@ function GridCard({ article }: { article: ArticleWithGame }) {
   );
 }
 
-/* ─── Sidebar list item ──────────────────────────────────────── */
-function SidebarItem({
-  article,
-  index,
-}: {
-  article: ArticleWithGame;
-  index: number;
-}) {
+function SidebarItem({ article, index }: { article: ArticleWithGame; index: number }) {
   return (
     <Link
       href={`/${article.sport}/${article.slug}`}
@@ -181,9 +162,7 @@ function SidebarItem({
   );
 }
 
-/* ─── Compact list row ───────────────────────────────────────── */
 function CompactRow({ article }: { article: ArticleWithGame }) {
-  const game = article.game;
   return (
     <Link
       href={`/${article.sport}/${article.slug}`}
@@ -219,73 +198,73 @@ function CompactRow({ article }: { article: ArticleWithGame }) {
   );
 }
 
-/* ─── Page ───────────────────────────────────────────────────── */
 export default async function HomePage() {
-  const articles = await getLatestArticles(10);
-  const [featured, ...rest] = articles;
-  const gridArticles = rest.slice(0, 4);
-  const sidebarArticles = articles.slice(0, 5);
-  const compactArticles = rest.slice(4, 7);
+  const activeSports = getActiveSports();
+  const primarySport = activeSports[0]?.key ?? 'mlb';
+  const [latestArticles, bestArticles, mostReadArticles, sportSections] = await Promise.all([
+    getLatestArticlesAllSports(10),
+    getBestPredictions(3),
+    getMostReadArticles(5),
+    Promise.all(
+      activeSports.map(async (sport) => ({
+        sport,
+        articles: await getLatestArticlesBySport(sport.key, 4),
+      })),
+    ),
+  ]);
+  const [featured] = latestArticles;
+  const latestSidebarArticles = latestArticles.slice(0, 5);
 
   return (
     <>
-      <SiteHeader activeSport="mlb" />
+      <SiteHeader activeSport={primarySport} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-8 py-8">
-        {/* Ad banner */}
         <div className="mb-6">
           <AdSlot position="top" />
         </div>
 
-        {/* Hero + sidebar */}
-        {articles.length === 0 ? (
+        {latestArticles.length === 0 ? (
           <EmptyState />
         ) : (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-10 mb-12">
-              {/* Featured story */}
-              <div>
-                {featured && <FeaturedCard article={featured} />}
-              </div>
-
-              {/* Latest sidebar */}
+              <div>{featured && <FeaturedCard article={featured} />}</div>
               <aside className="hidden lg:block">
-                <SectionHeading href="/mlb">Latest MLB Predictions</SectionHeading>
+                <SectionHeading>Latest Predictions</SectionHeading>
                 <div>
-                  {sidebarArticles.map((article, i) => (
+                  {latestSidebarArticles.map((article, i) => (
                     <SidebarItem key={article.id} article={article} index={i} />
                   ))}
                 </div>
               </aside>
             </div>
 
-            {/* Article grid */}
-            <section className="mb-12">
-              <SectionHeading href="/mlb">MLB Predictions</SectionHeading>
-              {gridArticles.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {gridArticles.map((article) => (
-                    <GridCard key={article.id} article={article} />
-                  ))}
-                </div>
-              ) : (
-                <p className="text-[#9CA3AF] text-[14px]">More predictions coming soon.</p>
-              )}
-            </section>
+            {sportSections.map(({ sport, articles: sportArticles }) =>
+              sportArticles.length > 0 ? (
+                <section key={sport.key} className="mb-12">
+                  <SectionHeading href={`/${sport.key}`}>
+                    {sport.label} Predictions
+                  </SectionHeading>
+                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {sportArticles.map((article) => (
+                      <GridCard key={article.id} article={article} />
+                    ))}
+                  </div>
+                </section>
+              ) : null,
+            )}
 
-            {/* Mid ad */}
             <div className="border-t border-b border-[#E5E7EB] py-4 mb-12 bg-[#F3F4F6]">
               <AdSlot position="mid" />
             </div>
 
-            {/* Two-column: compact articles + trending */}
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-10">
-              {/* Latest Predictions list */}
               <section>
-                <SectionHeading href="/mlb">Best Predictions</SectionHeading>
-                {compactArticles.length > 0 ? (
+                <SectionHeading>Best Predictions</SectionHeading>
+                {bestArticles.length > 0 ? (
                   <div>
-                    {compactArticles.map((article) => (
+                    {bestArticles.map((article) => (
                       <CompactRow key={article.id} article={article} />
                     ))}
                   </div>
@@ -294,11 +273,10 @@ export default async function HomePage() {
                 )}
               </section>
 
-              {/* Trending sidebar */}
               <aside className="hidden lg:block">
                 <SectionHeading>Most Read Today</SectionHeading>
                 <div>
-                  {sidebarArticles.map((article, i) => (
+                  {mostReadArticles.map((article, i) => (
                     <SidebarItem key={article.id} article={article} index={i} />
                   ))}
                 </div>
