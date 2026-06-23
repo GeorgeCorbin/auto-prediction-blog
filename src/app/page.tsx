@@ -200,7 +200,6 @@ function CompactRow({ article }: { article: ArticleWithGame }) {
 
 export default async function HomePage() {
   const activeSports = getActiveSports();
-  const primarySport = activeSports[0]?.key ?? 'mlb';
   const [latestArticles, bestArticles, mostReadArticles, sportSections] = await Promise.all([
     getLatestArticlesAllSports(10),
     getBestPredictions(3),
@@ -217,7 +216,7 @@ export default async function HomePage() {
 
   return (
     <>
-      <SiteHeader activeSport={primarySport} />
+      <SiteHeader />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-8 py-8">
         <div className="mb-6">
