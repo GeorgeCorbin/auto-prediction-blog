@@ -8,11 +8,11 @@ export function getMaxArticlesPerSportPerRun(
   now = new Date(),
 ): number {
   if (readyCount <= 1) return readyCount;
-  if (readyCount <= 4) return readyCount;
+  if (readyCount <= 6) return readyCount;
 
   const hour = getEasternHour(now);
   const slot = hashString(`${getTodayEspnDateStr(now)}:${sportKey}:${hour}`) % 2;
-  return 2 + slot;
+  return 4 + slot;
 }
 
 /** @deprecated Use getMaxArticlesPerSportPerRun — global cap replaced by per-sport queues. */

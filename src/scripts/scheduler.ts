@@ -4,7 +4,7 @@ import { generateArticles } from './generate-articles';
 
 console.log('Scheduler started.');
 console.log('  scan-games:        every hour (ESPN; odds API throttled to 4h per sport)');
-console.log('  generate-articles: every 30 minutes (uses stored odds lines)');
+console.log('  generate-articles: every 15 minutes (uses stored odds lines)');
 
 // Run scan first, then generate — avoids racing on startup when no games are READY yet
 scanGames()
@@ -19,8 +19,8 @@ cron.schedule('0 * * * *', () => {
   scanGames().catch(console.error);
 });
 
-// Every 30 minutes: generate articles for READY games
-cron.schedule('*/30 * * * *', () => {
+// Every 15 minutes: generate articles for READY games
+cron.schedule('*/15 * * * *', () => {
   console.log(`[${new Date().toISOString()}] Running generate-articles...`);
   generateArticles().catch(console.error);
 });
