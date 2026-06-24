@@ -111,7 +111,7 @@ function beatWritersForTeam(abbr: string): readonly AuthorName[] {
 
 function pickFromPool<T extends string>(pool: readonly T[], seed: string): T {
   const hash = hashString(seed);
-  return pool[(hash >> 4) % pool.length];
+  return pool[(hash >>> 4) % pool.length];
 }
 
 /**
@@ -135,10 +135,10 @@ export function pickAuthorForGame(
   const pool = beatWritersForTeam(teamAbbr);
 
   if (hash % 12 === 0) {
-    return AUTHORS[(hash >> 4) % AUTHORS.length];
+    return AUTHORS[(hash >>> 4) % AUTHORS.length];
   }
 
-  return pool[(hash >> 4) % pool.length];
+  return pool[(hash >>> 4) % pool.length];
 }
 
 export function getArticleAuthor(

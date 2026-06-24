@@ -14,8 +14,11 @@ export function hashString(value: string): number {
 }
 
 export function pickFromPool<T>(pool: readonly T[], seed: string): T {
+  if (pool.length === 0) {
+    throw new Error('pickFromPool called with an empty pool');
+  }
   const hash = hashString(seed);
-  return pool[(hash >> 4) % pool.length];
+  return pool[(hash >>> 4) % pool.length];
 }
 
 export function pickIndexFromPool(length: number, seed: string): number {
