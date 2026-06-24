@@ -1,6 +1,11 @@
 import axios from 'axios';
 import { z } from 'zod';
 import type { GameOdds, OddsProvider } from './provider';
+import {
+  assignOutcomeTeam,
+  oddsHomeMatchesEspnHome,
+  teamsMatchGame,
+} from './team-matching';
 
 /** Max hours between Odds API commence_time and ESPN scheduledAt when matching lines. */
 const ODDS_MATCH_WINDOW_HOURS = 120;
@@ -37,33 +42,8 @@ const OddsGameSchema = z.object({
 
 const OddsApiResponseSchema = z.array(OddsGameSchema);
 
-// ---------------------------------------------------------------------------
-// Team name normalization helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Normalises a team name to a set of lowercase word tokens, dropping very
- * short/common words so "Boston Red Sox" → ["boston", "red", "sox"].
- */
-function tokenise(name: string): Set<string> {
-  return new Set(
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9 ]/g, '')
-      .split(/\s+/)
-      .filter((w) => w.length > 1),
-  );
-}
-
-/** Returns true when the two team name strings share at least one meaningful token. */
-function teamsMatch(a: string, b: string): boolean {
-  const ta = tokenise(a);
-  const tb = tokenise(b);
-  for (const token of ta) {
-    if (tb.has(token)) return true;
-  }
-  return false;
-}
+type Market = z.infer<typeof MarketSchema>;
+type Bookmaker = z.infer<typeof BookmakerSchema>;
 
 /** True when odds commence_time is close enough to ESPN kickoff (supports multi-day lead). */
 function withinDateWindow(oddsCommenceTime: string, scheduledAt: Date): boolean {
@@ -72,12 +52,83 @@ function withinDateWindow(oddsCommenceTime: string, scheduledAt: Date): boolean 
   return diffMs <= ODDS_MATCH_WINDOW_HOURS * 60 * 60 * 1000;
 }
 
+function scoreH2hMarket(market: Market): number {
+  const outcomes = market.outcomes.filter((o) => o.price !== undefined);
+  const teamOutcomes = outcomes.filter((o) => o.name.toLowerCase() !== 'draw');
+  const hasDraw = outcomes.some((o) => o.name.toLowerCase() === 'draw');
+  return teamOutcomes.length * 10 + (hasDraw ? 5 : 0) + outcomes.length;
+}
+
+function scoreTotalsMarket(market: Market): number {
+  const over = market.outcomes.find((o) => o.name.toLowerCase() === 'over');
+  const under = market.outcomes.find((o) => o.name.toLowerCase() === 'under');
+  let score = 0;
+  if (over?.price !== undefined && over.point !== undefined) score += 2;
+  if (under?.price !== undefined && under.point !== undefined) score += 2;
+  return score;
+}
+
+function scoreSpreadsMarket(market: Market): number {
+  return market.outcomes.filter((o) => o.price !== undefined && o.point !== undefined).length;
+}
+
+/** Pick the richest market of each type across all bookmakers for a game. */
+function selectBestMarkets(bookmakers: Bookmaker[]): Market[] {
+  const bestByKey = new Map<string, Market>();
+
+  for (const bookmaker of bookmakers) {
+    for (const market of bookmaker.markets) {
+      let score: number;
+      switch (market.key) {
+        case 'h2h':
+          score = scoreH2hMarket(market);
+          break;
+        case 'totals':
+          score = scoreTotalsMarket(market);
+          break;
+        case 'spreads':
+          score = scoreSpreadsMarket(market);
+          break;
+        default:
+          continue;
+      }
+
+      const prev = bestByKey.get(market.key);
+      if (!prev) {
+        bestByKey.set(market.key, market);
+        continue;
+      }
+
+      let prevScore: number;
+      switch (market.key) {
+        case 'h2h':
+          prevScore = scoreH2hMarket(prev);
+          break;
+        case 'totals':
+          prevScore = scoreTotalsMarket(prev);
+          break;
+        case 'spreads':
+          prevScore = scoreSpreadsMarket(prev);
+          break;
+        default:
+          prevScore = 0;
+      }
+
+      if (score > prevScore) {
+        bestByKey.set(market.key, market);
+      }
+    }
+  }
+
+  return Array.from(bestByKey.values());
+}
+
 // ---------------------------------------------------------------------------
 // Odds extraction helpers
 // ---------------------------------------------------------------------------
 
 function extractMoneylines(
-  markets: z.infer<typeof MarketSchema>[],
+  markets: Market[],
   homeTeam: string,
   awayTeam: string,
 ): { homeMoneyline: number | null; awayMoneyline: number | null; drawMoneyline: number | null } {
@@ -89,21 +140,21 @@ function extractMoneylines(
   let drawMoneyline: number | null = null;
 
   for (const outcome of h2h.outcomes) {
-    const nameLower = outcome.name.toLowerCase();
-    if (nameLower === 'draw') {
+    if (outcome.name.toLowerCase() === 'draw') {
       drawMoneyline = outcome.price ?? null;
-    } else if (teamsMatch(outcome.name, homeTeam)) {
-      homeMoneyline = outcome.price ?? null;
-    } else if (teamsMatch(outcome.name, awayTeam)) {
-      awayMoneyline = outcome.price ?? null;
+      continue;
     }
+
+    const side = assignOutcomeTeam(outcome.name, homeTeam, awayTeam);
+    if (side === 'home') homeMoneyline = outcome.price ?? null;
+    else if (side === 'away') awayMoneyline = outcome.price ?? null;
   }
 
   return { homeMoneyline, awayMoneyline, drawMoneyline };
 }
 
 function extractSpreads(
-  markets: z.infer<typeof MarketSchema>[],
+  markets: Market[],
   homeTeam: string,
   awayTeam: string,
 ): {
@@ -128,10 +179,11 @@ function extractSpreads(
   let awaySpreadPrice: number | null = null;
 
   for (const outcome of spreadsMarket.outcomes) {
-    if (teamsMatch(outcome.name, homeTeam)) {
+    const side = assignOutcomeTeam(outcome.name, homeTeam, awayTeam);
+    if (side === 'home') {
       homeSpread = outcome.point ?? null;
       homeSpreadPrice = outcome.price ?? null;
-    } else if (teamsMatch(outcome.name, awayTeam)) {
+    } else if (side === 'away') {
       awaySpread = outcome.point ?? null;
       awaySpreadPrice = outcome.price ?? null;
     }
@@ -141,7 +193,7 @@ function extractSpreads(
 }
 
 function extractTotals(
-  markets: z.infer<typeof MarketSchema>[],
+  markets: Market[],
 ): { total: number | null; overPrice: number | null; underPrice: number | null } {
   const totalsMarket = markets.find((m) => m.key === 'totals');
   if (!totalsMarket) {
@@ -231,33 +283,26 @@ export class TheOddsApiProvider implements OddsProvider {
     }
 
     for (const espnGame of games) {
-      // Find the matching odds game by team name + date proximity
       const oddsGame = oddsGames.find(
         (og) =>
           withinDateWindow(og.commence_time, espnGame.scheduledAt) &&
-          ((teamsMatch(og.home_team, espnGame.homeTeam) &&
-            teamsMatch(og.away_team, espnGame.awayTeam)) ||
-            // Sometimes home/away may be swapped in the odds API
-            (teamsMatch(og.home_team, espnGame.awayTeam) &&
-              teamsMatch(og.away_team, espnGame.homeTeam))),
+          teamsMatchGame(og.home_team, og.away_team, espnGame.homeTeam, espnGame.awayTeam),
       );
 
-      if (!oddsGame) continue;
+      if (!oddsGame?.bookmakers?.length) continue;
 
-      const bookmaker = oddsGame.bookmakers?.[0];
-      if (!bookmaker) continue;
+      const markets = selectBestMarkets(oddsGame.bookmakers);
 
-      const markets = bookmaker.markets;
-
-      // If odds API has home/away swapped relative to ESPN, flip the team references
-      const oddsHomeIsEspnHome = teamsMatch(oddsGame.home_team, espnGame.homeTeam);
+      const oddsHomeIsEspnHome = oddsHomeMatchesEspnHome(
+        oddsGame.home_team,
+        espnGame.homeTeam,
+      );
       const oddsHomeTeam = oddsHomeIsEspnHome ? espnGame.homeTeam : espnGame.awayTeam;
       const oddsAwayTeam = oddsHomeIsEspnHome ? espnGame.awayTeam : espnGame.homeTeam;
 
       const { homeMoneyline: rawHome, awayMoneyline: rawAway, drawMoneyline: rawDraw } =
         extractMoneylines(markets, oddsHomeTeam, oddsAwayTeam);
 
-      // Re-orient so keys are always from ESPN's perspective
       const homeMoneyline = oddsHomeIsEspnHome ? rawHome : rawAway;
       const awayMoneyline = oddsHomeIsEspnHome ? rawAway : rawHome;
       const moneylineDraw = rawDraw;
