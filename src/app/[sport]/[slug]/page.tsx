@@ -16,6 +16,7 @@ import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
 import { formatAmericanOdds, formatSpreadPoint } from '@/lib/odds/format';
 import { SportArticlePanels } from '@/lib/sports/article-panels';
+import { teamNameToSlug } from '@/lib/teams';
 
 export const revalidate = 3600;
 
@@ -469,7 +470,7 @@ export default async function ArticlePage({ params }: Props) {
 
             <SportArticlePanels game={game} />
 
-            {/* Article body paragraphs */}
+            {/* Article body paragraphs — stats widget interlaced after paragraph 2 */}
             <div className="mb-8 space-y-4">
               {paragraphs.slice(1).map((para, i) => (
                 <div key={i}>
@@ -496,6 +497,24 @@ export default async function ArticlePage({ params }: Props) {
                 top play for this game.
               </p>
             </section>
+
+            {/* Team page links — internal linking cluster */}
+            <div className="flex flex-wrap gap-3 mb-8">
+              <Link
+                href={`/teams/${teamNameToSlug(game.awayTeam)}`}
+                className="inline-flex items-center gap-1.5 border border-[#E5E7EB] rounded px-4 py-2.5 text-[13px] font-semibold text-[#1A1A1A] hover:border-[#FF6B2C] hover:text-[#FF6B2C] transition-colors"
+              >
+                <span className="text-[#9CA3AF]">All</span>
+                {game.awayTeam} Predictions
+              </Link>
+              <Link
+                href={`/teams/${teamNameToSlug(game.homeTeam)}`}
+                className="inline-flex items-center gap-1.5 border border-[#E5E7EB] rounded px-4 py-2.5 text-[13px] font-semibold text-[#1A1A1A] hover:border-[#FF6B2C] hover:text-[#FF6B2C] transition-colors"
+              >
+                <span className="text-[#9CA3AF]">All</span>
+                {game.homeTeam} Predictions
+              </Link>
+            </div>
 
             {/* Bottom ad */}
             <div className="border border-[#E5E7EB] bg-[#F3F4F6] py-2 mb-8">

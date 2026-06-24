@@ -287,7 +287,11 @@ ANTI-REPETITION:
   const userPrompt = `Write a 400–600 word World Cup match prediction article for the following fixture. Output ONLY the article text — no JSON, no markdown headers using # syntax except the title line.
 
 FORMAT:
-- Line 1: Article title in exactly this format: "{AwayTeam} vs {HomeTeam} Prediction {Month Day, Year}"
+- Line 1: Article title — use ONE of these styles (pick the best fit for this fixture):
+  • "{AwayTeam} vs {HomeTeam} World Cup Prediction ({Month Day}): Odds, Pick & Analysis"
+  • "{AwayTeam} vs {HomeTeam} Prediction ({Month Day}): Our Pick Is ${ctx.pickLabel}"
+  • "{AwayTeam} vs {HomeTeam} ({Month Day}): Odds, Best Bet & Match Preview"
+  Do NOT include the year in the title. Do NOT add any markdown (#) to the title line.
 - Line 2: Empty line
 - Line 3 onward: Article body
 

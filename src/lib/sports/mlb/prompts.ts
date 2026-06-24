@@ -84,14 +84,14 @@ Over/Under: ${ctx.total}`
     : '';
 
   const structureWithOdds = `1. Opening paragraph: state the matchup, date, and your headline pick recommendation
-2. Home team analysis: discuss their offense (AVG, runs, hits) and starting pitcher (name, W-L record, ERA) — only reference stats you are given
-3. Away team analysis: discuss their offense and starting pitcher — only reference stats you are given
-4. Prediction reasoning: compare the pitching matchup, team form, and betting line value — weave your pick into this analysis naturally`;
+2. Home team analysis: weave their batting average, runs per game, OPS, and ERA naturally into full sentences — e.g. "The Braves rank among the league leaders with a .265 team average and 4.8 runs per game, while their rotation carries a 3.81 ERA." Do not use bullet points or stat lists.
+3. Away team analysis: same approach — weave their key numbers into flowing prose sentences. Mention the starting pitcher by name with their record and ERA embedded in a sentence.
+4. Prediction reasoning: contrast the two sides' stats in paragraph form, reference the betting line, and arrive at the pick naturally through the analysis — no standalone pick callout`;
 
   const structureWithoutOdds = `1. Opening paragraph: state the matchup, date, and your headline pick recommendation
-2. Home team analysis: discuss their offense (AVG, runs, hits) and starting pitcher (name, W-L record, ERA) — only reference stats you are given
-3. Away team analysis: discuss their offense and starting pitcher — only reference stats you are given
-4. Prediction reasoning: compare the pitching matchup, team records, and recent form — weave your straight-up winner pick into this analysis naturally; do not reference betting lines`;
+2. Home team analysis: weave their batting average, runs per game, OPS, and ERA naturally into full sentences — e.g. "The Braves rank among the league leaders with a .265 team average and 4.8 runs per game, while their rotation carries a 3.81 ERA." Do not use bullet points or stat lists.
+3. Away team analysis: same approach — weave their key numbers into flowing prose sentences. Mention the starting pitcher by name with their record and ERA embedded in a sentence.
+4. Prediction reasoning: contrast the two sides' stats in paragraph form and arrive at the pick naturally through the analysis — no standalone pick callout; do not reference betting lines`;
 
   const systemPrompt = `You are a professional sports analyst writing MLB game prediction articles for a sports prediction blog. Your writing style is authoritative, data-driven, and engaging — similar to ESPN or The Athletic. Write in the third person and avoid using "I".
 
@@ -115,7 +115,11 @@ ANTI-REPETITION:
   const userPrompt = `Write a 400–600 word MLB game prediction article for the following matchup. Output ONLY the article text — no JSON, no markdown headers using # syntax except the title line.
 
 FORMAT:
-- Line 1: Article title in exactly this format: "{AwayTeam} vs {HomeTeam} Prediction {Month Day, Year}"
+- Line 1: Article title — use ONE of these styles (pick the best fit for this matchup):
+  • "{AwayTeam} vs {HomeTeam} Prediction ({Month Day}): Odds, Pick & Analysis"
+  • "{AwayTeam} vs {HomeTeam} Prediction ({Month Day}): Our Pick Is ${ctx.pickLabel}"
+  • "{AwayTeam} vs {HomeTeam} ({Month Day}): Run Line Pick, Odds & Best Bet"
+  Do NOT include the year in the title. Do NOT add any markdown (#) to the title line.
 - Line 2: Empty line
 - Line 3 onward: Article body
 
