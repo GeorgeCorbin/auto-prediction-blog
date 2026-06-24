@@ -27,7 +27,7 @@ export async function refreshOdds(): Promise<void> {
   }
 
   console.log(
-    `[refresh-odds] Refreshing odds for ${publishedGames.length} published game(s)...`,
+    `[refresh-odds] Force-refreshing odds for ${publishedGames.length} published game(s)...`,
   );
 
   let totalMatched = 0;
@@ -53,6 +53,7 @@ export async function refreshOdds(): Promise<void> {
         scheduledAt: g.scheduledAt,
       })),
       sportConfig.oddsApiKey,
+      { force: true },
     );
 
     totalMatched += oddsMap.size;

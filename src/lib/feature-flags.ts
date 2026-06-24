@@ -40,7 +40,21 @@ export const publishHoursEt = { start: 6, end: 23 };
 export const mlbArticleLeadHours = 24;
 export const mlbPriorGamePublishBufferHours = 3;
 
+// ─── Odds API cadence ─────────────────────────────────────────────────────────
+//
+//  The Odds API has no multi-sport odds endpoint — each sport needs its own
+//  request (e.g. baseball_mlb, soccer_fifa_world_cup). Within a sport, one
+//  request returns every listed game. scan-games runs hourly for ESPN; odds
+//  API calls are throttled to this interval. Manual `npm run refresh-odds`
+//  bypasses the throttle.
+//
+export const oddsRefreshIntervalMinutes = 240;
+
 // ─────────────────────────────────────────────────────────────────────────────
+
+export function getOddsRefreshIntervalMs(): number {
+  return oddsRefreshIntervalMinutes * 60 * 1000;
+}
 
 export function isStatsPickWithoutOddsEnabled(): boolean {
   return statsPickWithoutOdds;

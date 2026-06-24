@@ -3,8 +3,8 @@ import { scanGames } from './scan-games';
 import { generateArticles } from './generate-articles';
 
 console.log('Scheduler started.');
-console.log('  scan-games:        every hour (ESPN only)');
-console.log('  generate-articles: every 30 minutes (AI at publish time; odds when enabled)');
+console.log('  scan-games:        every hour (ESPN; odds API throttled to 4h per sport)');
+console.log('  generate-articles: every 30 minutes (uses stored odds lines)');
 
 // Run scan first, then generate — avoids racing on startup when no games are READY yet
 scanGames()

@@ -5,6 +5,8 @@ import {
 } from '@/lib/games/game-day';
 import { getActiveSports, getSportConfig } from '@/lib/sports/config';
 import { getSportModule } from '@/lib/sports/registry';
+import { isOddsApiEnabled } from '@/lib/feature-flags';
+import { refreshUpcomingOddsForSport } from '@/lib/odds/persist-odds';
 import { prisma } from '@/lib/db';
 
 export async function scanGames(): Promise<void> {
@@ -24,6 +26,15 @@ export async function scanGames(): Promise<void> {
 
   for (const sport of getActiveSports()) {
     await getSportModule(sport.key).scanGameDay(sport, todayDateStr);
+
+    if (!isOddsApiEnabled()) continue;
+
+    const oddsResult = await refreshUpcomingOddsForSport(sport, now);
+    if (oddsResult.total === 0 || !oddsResult.apiCalled) continue;
+
+    console.log(
+      `[scan-games] [${sport.label}] Odds API refreshed — matched ${oddsResult.matched} of ${oddsResult.total} upcoming game(s)`,
+    );
   }
 
   console.log('\n[scan-games] Done.');
