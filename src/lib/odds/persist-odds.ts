@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { isOddsApiEnabled } from '@/lib/feature-flags';
 import { oddsProvider } from '@/lib/odds';
 import type { GameOdds } from '@/lib/odds/provider';
 
@@ -15,6 +16,7 @@ export async function fetchAndPersistOddsForGames(
   sportOddsKey: string,
 ): Promise<Map<string, GameOdds>> {
   if (games.length === 0) return new Map();
+  if (!isOddsApiEnabled()) return new Map();
 
   const oddsMap = await oddsProvider.getOddsForGames(games, sportOddsKey);
 

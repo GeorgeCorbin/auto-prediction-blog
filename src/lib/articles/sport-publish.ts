@@ -1,4 +1,5 @@
 import type { Game } from '@prisma/client';
+import { isStatsPickWithoutOddsEnabled } from '@/lib/feature-flags';
 import type { SportConfig } from '@/lib/sports/config';
 import { getSportModule } from '@/lib/sports/registry';
 import type { PickOptions } from '@/lib/sports/types';
@@ -28,9 +29,10 @@ export function canPickGameNow(game: Game, pickOptions: PickOptions): boolean {
   return pickOptions.allowStatsFallback;
 }
 
-/** Kickoff passed and no usable odds were ever stored — drop from the publish queue. */
+/** Kickoff passed — drop from the publish queue (odds mode: only when no lines were stored). */
 export function shouldSkipStartedWithoutOdds(game: Game, now = new Date()): boolean {
   if (game.scheduledAt > now) return false;
+  if (isStatsPickWithoutOddsEnabled()) return true;
   return !gameHasUsableOdds(game);
 }
 

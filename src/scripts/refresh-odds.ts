@@ -1,10 +1,16 @@
 import 'dotenv/config';
 import { prisma } from '@/lib/db';
+import { isOddsApiEnabled } from '@/lib/feature-flags';
 import { SPORTS } from '@/lib/sports/config';
 import { fetchAndPersistOddsForGames } from '@/lib/odds/persist-odds';
 
 /** Re-fetch odds from The Odds API and persist them for all upcoming published games. */
 export async function refreshOdds(): Promise<void> {
+  if (!isOddsApiEnabled()) {
+    console.log('[refresh-odds] Skipping — statsPickWithoutOdds is enabled (odds API disabled).');
+    return;
+  }
+
   const now = new Date();
 
   const publishedGames = await prisma.game.findMany({

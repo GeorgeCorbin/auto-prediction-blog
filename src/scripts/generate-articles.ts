@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import { ENABLED_SPORTS, isSportInSeason } from '@/lib/sports/config';
 import { describeAiConfig, getActiveAiConfig } from '@/lib/ai';
 import { generateArticle } from '@/lib/ai/generator';
-import { getPickOptions } from '@/lib/feature-flags';
+import { getPickOptions, isOddsApiEnabled } from '@/lib/feature-flags';
 import { filterGamesForSport, isWithinPublishingHours } from '@/lib/games/game-day';
 import { fetchAndPersistOddsForGames } from '@/lib/odds/persist-odds';
 import { pickAuthorForGame } from '@/lib/authors';
@@ -34,7 +34,7 @@ export async function generateArticles(): Promise<void> {
   const pickOptions = getPickOptions();
   console.log(
     `[generate-articles] Pick mode: ${
-      pickOptions.allowStatsFallback ? 'stats fallback allowed' : 'odds required'
+      pickOptions.allowStatsFallback ? 'stats only (odds API disabled)' : 'odds required'
     }`,
   );
 
@@ -145,29 +145,31 @@ export async function generateArticles(): Promise<void> {
     );
   }
 
-  for (const batch of batches) {
-    if (batch.toPublish.length === 0) continue;
+  if (isOddsApiEnabled()) {
+    for (const batch of batches) {
+      if (batch.toPublish.length === 0) continue;
 
-    const sportConfig = ENABLED_SPORTS.find((s) => s.key === batch.sportKey);
-    if (!sportConfig || !isSportInSeason(sportConfig)) continue;
+      const sportConfig = ENABLED_SPORTS.find((s) => s.key === batch.sportKey);
+      if (!sportConfig || !isSportInSeason(sportConfig)) continue;
 
-    console.log(
-      `[generate-articles] [${batch.sportLabel}] Fetching fresh odds for ${batch.toPublish.length} game(s)`,
-    );
+      console.log(
+        `[generate-articles] [${batch.sportLabel}] Fetching fresh odds for ${batch.toPublish.length} game(s)`,
+      );
 
-    const oddsMap = await fetchAndPersistOddsForGames(
-      batch.toPublish.map((g) => ({
-        espnEventId: g.espnEventId,
-        homeTeam: g.homeTeam,
-        awayTeam: g.awayTeam,
-        scheduledAt: g.scheduledAt,
-      })),
-      sportConfig.oddsApiKey,
-    );
+      const oddsMap = await fetchAndPersistOddsForGames(
+        batch.toPublish.map((g) => ({
+          espnEventId: g.espnEventId,
+          homeTeam: g.homeTeam,
+          awayTeam: g.awayTeam,
+          scheduledAt: g.scheduledAt,
+        })),
+        sportConfig.oddsApiKey,
+      );
 
-    console.log(
-      `[generate-articles] [${batch.sportLabel}] Odds matched for ${oddsMap.size} of ${batch.toPublish.length} game(s)`,
-    );
+      console.log(
+        `[generate-articles] [${batch.sportLabel}] Odds matched for ${oddsMap.size} of ${batch.toPublish.length} game(s)`,
+      );
+    }
   }
 
   const refreshedById = new Map(

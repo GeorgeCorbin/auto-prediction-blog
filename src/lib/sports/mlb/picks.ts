@@ -345,22 +345,20 @@ export function resolveMlbPick(
   input: MlbPickInput,
   options: { allowStatsFallback: boolean },
 ): MlbPickResult | null {
-  const hasOdds = hasUsableOdds(input);
+  if (options.allowStatsFallback) {
+    const scores = computeAnalysisScores(input);
+    const pickedTeam: 'home' | 'away' = scores.homeScore >= scores.awayScore ? 'home' : 'away';
+    return {
+      favoredTeam: pickedTeam,
+      hasOdds: false,
+      pickLabel: buildStatsPickLabel(pickedTeam, input),
+    };
+  }
 
-  if (!hasOdds && !options.allowStatsFallback) {
+  if (!hasUsableOdds(input)) {
     return null;
   }
 
-  if (hasOdds) {
-    const { pickLabel, favoredTeam } = pickBestValueBet(input);
-    return { favoredTeam, hasOdds, pickLabel };
-  }
-
-  const scores = computeAnalysisScores(input);
-  const pickedTeam: 'home' | 'away' = scores.homeScore >= scores.awayScore ? 'home' : 'away';
-  return {
-    favoredTeam: pickedTeam,
-    hasOdds: false,
-    pickLabel: buildStatsPickLabel(pickedTeam, input),
-  };
+  const { pickLabel, favoredTeam } = pickBestValueBet(input);
+  return { favoredTeam, hasOdds: true, pickLabel };
 }

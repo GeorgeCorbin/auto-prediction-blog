@@ -16,15 +16,11 @@ export const aiModel: AiPresetName = 'local';
 
 // ─── Picks ────────────────────────────────────────────────────────────────────
 //
-//  statsPickWithoutOdds controls whether article generation may proceed without
-//  usable betting odds:
+//  statsPickWithoutOdds toggles the entire odds pipeline:
 //
-//  false  Odds required — resolvePick returns null when no odds; game stays READY
-//  true   Stats fallback — pick a winner from records, form, and pitching data
-//
-//  When odds ARE present, odds-based value logic always runs regardless of this flag.
-//  Prompts receive hasOdds from the pick result so articles skip betting-line copy
-//  when only stats were used.
+//  false  Odds required — fetch from The Odds API at publish time; value picks from
+//         lines; games without odds stay READY until lines appear or kickoff passes
+//  true   Stats only — no Odds API calls; picks from records, form, and pitching data
 //
 export const statsPickWithoutOdds = true;
 
@@ -48,6 +44,11 @@ export const mlbPriorGamePublishBufferHours = 3;
 
 export function isStatsPickWithoutOddsEnabled(): boolean {
   return statsPickWithoutOdds;
+}
+
+/** False when statsPickWithoutOdds is on — blocks all Odds API fetch/persist paths. */
+export function isOddsApiEnabled(): boolean {
+  return !statsPickWithoutOdds;
 }
 
 export function getPickOptions(): PickOptions {

@@ -93,7 +93,7 @@ npm run scan && npm run generate
 
 ### Feature flags
 
-Pipeline toggles live in `src/lib/feature-flags.ts` (not `.env`). Set `statsPickWithoutOdds: true` to generate articles without odds using stats/pitching analysis instead of spread or moneyline picks. Restart scan/generate/scheduler after changing flags.
+Pipeline toggles live in `src/lib/feature-flags.ts` (not `.env`). Set `statsPickWithoutOdds: true` to disable The Odds API entirely and generate articles from stats/pitching analysis only. Restart scan/generate/scheduler after changing flags.
 
 ### AI model / provider
 

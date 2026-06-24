@@ -472,15 +472,12 @@ export function resolveWorldCupPick(
   input: WorldCupPickInput,
   options: { allowStatsFallback: boolean },
 ): WorldCupPickResult | null {
-  const hasOdds = hasUsableOdds(input);
-
-  if (!hasOdds && !options.allowStatsFallback) {
+  if (!options.allowStatsFallback && !hasUsableOdds(input)) {
     return null;
   }
 
-  const probs = resolveWinProbs(input);
-
-  if (hasOdds) {
+  if (!options.allowStatsFallback) {
+    const probs = resolveWinProbs(input);
     const { favoredTeam, pickLabel } = pickBestValueBet(input, probs);
     return { favoredTeam, hasOdds: true, pickLabel };
   }
