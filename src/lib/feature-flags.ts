@@ -34,8 +34,8 @@ export const publishHoursEt = { start: 6, end: 23 };
 // ─── MLB article timing ───────────────────────────────────────────────────────
 //
 //  Articles may publish up to mlbArticleLeadHours before first pitch when starters
-//  are set. If another MLB game starts earlier, publishing waits until that game’s
-//  start plus mlbPriorGamePublishBufferHours (e.g. Tue 3pm game → Wed preview at 6pm).
+//  are set. If a team played earlier, publishing waits until that game’s start plus
+//  mlbPriorGamePublishBufferHours (e.g. Tue 3pm game → Wed preview at 6pm).
 //
 export const mlbArticleLeadHours = 24;
 export const mlbPriorGamePublishBufferHours = 3;

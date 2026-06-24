@@ -8,6 +8,13 @@ const MS_PER_HOUR = 60 * 60 * 1000;
 export interface MlbGameScheduleRef {
   id: string;
   scheduledAt: Date;
+  homeTeamAbbr: string;
+  awayTeamAbbr: string;
+}
+
+function sharesTeam(a: MlbGameScheduleRef, b: MlbGameScheduleRef): boolean {
+  const teams = new Set([a.homeTeamAbbr, a.awayTeamAbbr]);
+  return teams.has(b.homeTeamAbbr) || teams.has(b.awayTeamAbbr);
 }
 
 /** True when kickoff is in the future and within the MLB lead window. */
@@ -20,7 +27,7 @@ export function isWithinMlbArticleLeadWindow(
   return now.getTime() >= scheduledAt.getTime() - leadMs;
 }
 
-/** Earliest time an MLB preview may go live for `target`, accounting for prior games. */
+/** Earliest time an MLB preview may go live for `target`, accounting for the same team's prior games. */
 export function getMlbEarliestPublishTime(
   target: MlbGameScheduleRef,
   allGames: MlbGameScheduleRef[],
@@ -32,6 +39,7 @@ export function getMlbEarliestPublishTime(
   for (const prior of allGames) {
     if (prior.id === target.id) continue;
     if (prior.scheduledAt >= target.scheduledAt) continue;
+    if (!sharesTeam(target, prior)) continue;
     earliestMs = Math.max(earliestMs, prior.scheduledAt.getTime() + bufferMs);
   }
 

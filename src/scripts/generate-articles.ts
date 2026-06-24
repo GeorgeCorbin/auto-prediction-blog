@@ -80,9 +80,15 @@ export async function generateArticles(): Promise<void> {
       ? await prisma.game.findMany({
           where: {
             sport: 'mlb',
-            scheduledAt: { gt: new Date(now.getTime() - 26 * 60 * 60 * 1000) },
+            // 48h covers yesterday's game for same-team prior-game buffer (e.g. Tue game → Wed preview).
+            scheduledAt: { gt: new Date(now.getTime() - 48 * 60 * 60 * 1000) },
           },
-          select: { id: true, scheduledAt: true },
+          select: {
+            id: true,
+            scheduledAt: true,
+            homeTeamAbbr: true,
+            awayTeamAbbr: true,
+          },
         })
       : [];
 

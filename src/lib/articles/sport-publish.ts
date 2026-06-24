@@ -1,5 +1,6 @@
 import type { Game } from '@prisma/client';
 import { isStatsPickWithoutOddsEnabled } from '@/lib/feature-flags';
+import { GAME_DAY_TIMEZONE } from '@/lib/games/game-day';
 import type { SportConfig } from '@/lib/sports/config';
 import { getSportModule } from '@/lib/sports/registry';
 import type { PickOptions } from '@/lib/sports/types';
@@ -12,6 +13,16 @@ import { canPublishWorldCupGameNow } from '@/lib/sports/world-cup/publish-schedu
 export interface SportScheduleRef {
   id: string;
   scheduledAt: Date;
+  homeTeamAbbr: string;
+  awayTeamAbbr: string;
+}
+
+function formatHoldUntilEt(date: Date): string {
+  return date.toLocaleString('en-US', {
+    timeZone: GAME_DAY_TIMEZONE,
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
 }
 
 export interface SportPublishGate {
@@ -124,7 +135,7 @@ export function buildSportPublishBatches(
       onHold++;
       if (gate.holdUntil) {
         console.log(
-          `[generate-articles] [${sportConfig.label}] Holding ${game.awayTeam} @ ${game.homeTeam} until ${gate.holdUntil.toISOString()}`,
+          `[generate-articles] [${sportConfig.label}] Holding ${game.awayTeam} @ ${game.homeTeam} until ${formatHoldUntilEt(gate.holdUntil)} ET`,
         );
       }
     }
