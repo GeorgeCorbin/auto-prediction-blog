@@ -135,7 +135,7 @@ function formatTotalLine(total: number): string {
   return Number.isInteger(total) ? `${total}` : `${total}`;
 }
 
-function hasUsableOdds(input: WorldCupPickInput): boolean {
+export function hasUsableOdds(input: WorldCupPickInput): boolean {
   const hasThreeWay =
     input.moneylineHome !== null &&
     input.moneylineAway !== null &&

@@ -28,6 +28,8 @@ export interface SportModule<TContext extends PromptContextBase = PromptContextB
   key: string;
   scanGameDay(sport: SportConfig, todayDateStr: string): Promise<void>;
   isReady(espnGame: EspnGame, now: Date): boolean;
+  /** True when stored odds fields are sufficient for an odds-based pick. */
+  gameHasUsableOdds(game: Game): boolean;
   resolvePick(game: Game, options: PickOptions): SportPickResult | null;
   buildPromptContext(game: Game, pick: SportPickResult): TContext;
   buildPrompt(context: TContext): string;

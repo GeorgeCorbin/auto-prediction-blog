@@ -55,7 +55,7 @@ function parseStatNumber(stats: Record<string, string>, keys: string[]): number 
   return null;
 }
 
-function hasUsableOdds(input: MlbPickInput): boolean {
+export function hasUsableOdds(input: MlbPickInput): boolean {
   const hasMoneyline =
     input.moneylineHome !== null &&
     input.moneylineAway !== null &&

@@ -17,7 +17,7 @@ import {
   formatWatchString,
   parseWorldCupSportData,
 } from './schema';
-import { resolveWorldCupPick } from './picks';
+import { hasUsableOdds, resolveWorldCupPick } from './picks';
 import {
   buildWorldCupMetaDescription,
   buildWorldCupPrompt,
@@ -152,6 +152,10 @@ function buildPickInput(game: Game) {
   };
 }
 
+export function worldCupGameHasUsableOdds(game: Game): boolean {
+  return hasUsableOdds(buildPickInput(game));
+}
+
 export function resolveWorldCupGamePick(
   game: Game,
   options: { allowStatsFallback: boolean },
@@ -228,6 +232,7 @@ export const worldCupModule: SportModule<WorldCupGameContext> = {
     const sport = getSportConfig('world-cup');
     return sport ? isWorldCupReady(espnGame, now, sport) : false;
   },
+  gameHasUsableOdds: worldCupGameHasUsableOdds,
   resolvePick: resolveWorldCupGamePick,
   buildPromptContext: buildWorldCupPromptContext,
   buildPrompt: buildWorldCupPrompt,

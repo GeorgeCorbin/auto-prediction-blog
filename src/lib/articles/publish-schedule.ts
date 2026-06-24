@@ -1,14 +1,23 @@
 import { getEasternHour, getTodayEspnDateStr } from '@/lib/games/game-day';
 import { hashString } from '@/lib/sports/helpers';
 
-/** How many READY games to publish in a single generate run. */
-export function getMaxArticlesPerRun(readyCount: number, now = new Date()): number {
+/** How many READY games to publish per sport in a single generate run. */
+export function getMaxArticlesPerSportPerRun(
+  sportKey: string,
+  readyCount: number,
+  now = new Date(),
+): number {
   if (readyCount <= 1) return readyCount;
   if (readyCount <= 4) return readyCount;
 
   const hour = getEasternHour(now);
-  const slot = hashString(`${getTodayEspnDateStr(now)}:${hour}`) % 2;
+  const slot = hashString(`${getTodayEspnDateStr(now)}:${sportKey}:${hour}`) % 2;
   return 2 + slot;
+}
+
+/** @deprecated Use getMaxArticlesPerSportPerRun — global cap replaced by per-sport queues. */
+export function getMaxArticlesPerRun(readyCount: number, now = new Date()): number {
+  return getMaxArticlesPerSportPerRun('global', readyCount, now);
 }
 
 /** Earliest kickoff first so the most time-sensitive previews go live first. */

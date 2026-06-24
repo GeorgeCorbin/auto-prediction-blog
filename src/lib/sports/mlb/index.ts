@@ -11,7 +11,7 @@ import type { SportConfig } from '@/lib/sports/config';
 import { safeJsonRecord } from '@/lib/sports/helpers';
 import { isWithinMlbArticleLeadWindow } from './publish-schedule';
 import { parseMlbSportData } from './schema';
-import { resolveMlbPick } from './picks';
+import { hasUsableOdds, resolveMlbPick } from './picks';
 import { buildMlbMetaDescription, buildMlbPrompt, type MlbGameContext } from './prompts';
 import type { SportModule, SportPickResult } from '@/lib/sports/types';
 
@@ -143,6 +143,10 @@ function buildPickInput(game: Game) {
   };
 }
 
+export function mlbGameHasUsableOdds(game: Game): boolean {
+  return hasUsableOdds(buildPickInput(game));
+}
+
 export function resolveMlbGamePick(
   game: Game,
   options: { allowStatsFallback: boolean },
@@ -237,6 +241,7 @@ export const mlbModule: SportModule<MlbGameContext> = {
   key: 'mlb',
   scanGameDay: scanMlbGameDay,
   isReady: isMlbReady,
+  gameHasUsableOdds: mlbGameHasUsableOdds,
   resolvePick: resolveMlbGamePick,
   buildPromptContext: buildMlbPromptContext,
   buildPrompt: buildMlbPrompt,
