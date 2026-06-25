@@ -1,12 +1,14 @@
 import type { MetadataRoute } from 'next';
 import { prisma } from '@/lib/db';
 import { getActiveSports } from '@/lib/sports/config';
+import { teamNameToSlug } from '@/lib/teams';
 
 const STATIC_PAGES: Array<{
   path: string;
   changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency'];
   priority: number;
 }> = [
+  { path: '/teams', changeFrequency: 'weekly', priority: 0.7 },
   { path: '/about', changeFrequency: 'monthly', priority: 0.5 },
   { path: '/contact', changeFrequency: 'monthly', priority: 0.5 },
   { path: '/privacy-policy', changeFrequency: 'yearly', priority: 0.3 },
@@ -40,7 +42,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   try {
     const articles = await prisma.article.findMany({
-      select: { slug: true, sport: true, updatedAt: true },
+      select: {
+        slug: true,
+        sport: true,
+        updatedAt: true,
+        game: { select: { homeTeam: true, awayTeam: true } },
+      },
       orderBy: { publishedAt: 'desc' },
     });
 
@@ -51,7 +58,27 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     }));
 
-    return [...staticUrls, ...articleUrls];
+    const teamLastModified = new Map<string, Date>();
+    for (const article of articles) {
+      for (const name of [article.game.homeTeam, article.game.awayTeam]) {
+        const slug = teamNameToSlug(name);
+        const existing = teamLastModified.get(slug);
+        if (!existing || article.updatedAt > existing) {
+          teamLastModified.set(slug, article.updatedAt);
+        }
+      }
+    }
+
+    const teamUrls: MetadataRoute.Sitemap = Array.from(teamLastModified.entries()).map(
+      ([slug, lastModified]) => ({
+        url: `${siteUrl}/teams/${slug}`,
+        lastModified,
+        changeFrequency: 'weekly' as const,
+        priority: 0.6,
+      }),
+    );
+
+    return [...staticUrls, ...articleUrls, ...teamUrls];
   } catch {
     return staticUrls;
   }
