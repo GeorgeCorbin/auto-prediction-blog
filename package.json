@@ -10,6 +10,7 @@
     "lint": "eslint",
     "scan": "tsx src/scripts/scan-games.ts",
     "refresh-odds": "tsx src/scripts/refresh-odds.ts",
+    "dump-odds": "tsx src/scripts/dump-odds.ts",
     "generate": "tsx src/scripts/generate-articles.ts",
     "scheduler": "tsx src/scripts/scheduler.ts",
     "db:migrate": "prisma migrate dev",
