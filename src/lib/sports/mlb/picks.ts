@@ -110,11 +110,25 @@ function computeAnalysisScores(input: MlbPickInput): AnalysisScores {
     else if (awayEra < homeEra) awayScore += 3;
   }
 
-  const homeRuns = parseStatNumber(input.homeStats, ['Runs', 'Runs Per Game', 'R/G']);
-  const awayRuns = parseStatNumber(input.awayStats, ['Runs', 'Runs Per Game', 'R/G']);
+  const homeRuns = parseStatNumber(input.homeStats, ['Runs', 'Runs Per Game', 'R/G', 'runsPerGame']);
+  const awayRuns = parseStatNumber(input.awayStats, ['Runs', 'Runs Per Game', 'R/G', 'runsPerGame']);
   if (homeRuns !== null && awayRuns !== null) {
     if (homeRuns > awayRuns) homeScore += 1;
     else if (awayRuns > homeRuns) awayScore += 1;
+  }
+
+  const homeOps = parseStatNumber(input.homeStats, ['OPS', 'ops']);
+  const awayOps = parseStatNumber(input.awayStats, ['OPS', 'ops']);
+  if (homeOps !== null && awayOps !== null) {
+    if (homeOps > awayOps) homeScore += 1;
+    else if (awayOps > homeOps) awayScore += 1;
+  }
+
+  const homeWhip = parseStatNumber(input.homePitcherStats, ['WHIP', 'whip']);
+  const awayWhip = parseStatNumber(input.awayPitcherStats, ['WHIP', 'whip']);
+  if (homeWhip !== null && awayWhip !== null) {
+    if (homeWhip < awayWhip) homeScore += 1;
+    else if (awayWhip < homeWhip) awayScore += 1;
   }
 
   return { homeScore, awayScore };

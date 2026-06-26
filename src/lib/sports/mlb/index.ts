@@ -14,6 +14,14 @@ import { parseMlbSportData } from './schema';
 import { hasUsableOdds, resolveMlbPick } from './picks';
 import { buildMlbMetaDescription, buildMlbPrompt, type MlbGameContext } from './prompts';
 import type { SportModule, SportPickResult } from '@/lib/sports/types';
+import {
+  espnAbbrToMlbTeamId,
+  fetchMlbTeamStats,
+  fetchMlbStandingsForTeam,
+  fetchMlbTeamRecentRecord,
+  fetchMlbTeamLeaders,
+  fetchMlbInjuredPlayers,
+} from '@/lib/mlb-statsapi/client';
 
 function buildMlbSportDataFromEspn(g: EspnGame): Prisma.InputJsonValue {
   return {
@@ -25,6 +33,46 @@ function buildMlbSportDataFromEspn(g: EspnGame): Prisma.InputJsonValue {
     venueName: g.venueName,
     venueCity: g.venueCity,
     venueCountry: g.venueCountry,
+  };
+}
+
+function normalizeRichStats(
+  s: {
+    avg?: string | null;
+    obp?: string | null;
+    slg?: string | null;
+    ops?: string | null;
+    runsPerGame?: string | null;
+    homeRuns?: number | null;
+    era?: string | null;
+    whip?: string | null;
+    kPer9?: string | null;
+    oppAvg?: string | null;
+  } | null | undefined,
+): {
+  avg: string | null;
+  obp: string | null;
+  slg: string | null;
+  ops: string | null;
+  runsPerGame: string | null;
+  homeRuns: number | null;
+  era: string | null;
+  whip: string | null;
+  kPer9: string | null;
+  oppAvg: string | null;
+} | null {
+  if (!s) return null;
+  return {
+    avg: s.avg ?? null,
+    obp: s.obp ?? null,
+    slg: s.slg ?? null,
+    ops: s.ops ?? null,
+    runsPerGame: s.runsPerGame ?? null,
+    homeRuns: s.homeRuns ?? null,
+    era: s.era ?? null,
+    whip: s.whip ?? null,
+    kPer9: s.kPer9 ?? null,
+    oppAvg: s.oppAvg ?? null,
   };
 }
 
@@ -53,10 +101,86 @@ export async function scanMlbGameDay(sport: SportConfig, _todayDateStr: string):
     `[scan-games] ESPN returned ${games.length} ${sport.label} games, ${windowGames.length} within 24-hour publishing window`,
   );
 
-  if (windowGames.length === 0) return;
+  if (games.length === 0) return;
 
-  for (const g of windowGames) {
-    const sportData = buildMlbSportDataFromEspn(g);
+  const existingStatuses = await prisma.game.findMany({
+    where: { espnEventId: { in: games.map((g) => g.espnEventId) } },
+    select: { espnEventId: true, status: true },
+  });
+  const statusByEventId = new Map(existingStatuses.map((r) => [r.espnEventId, r.status]));
+
+  for (const g of games) {
+    const existingStatus = statusByEventId.get(g.espnEventId);
+    const isPublished = existingStatus === 'PUBLISHED';
+
+    const espnSportData = buildMlbSportDataFromEspn(g);
+
+    let sportData: Prisma.InputJsonValue;
+
+    if (isPublished) {
+      sportData = espnSportData;
+    } else {
+      const season = g.scheduledAt.getFullYear();
+      const gameDate = g.scheduledAt.toISOString().slice(0, 10);
+      const homeTeamId = espnAbbrToMlbTeamId(g.homeTeamAbbr);
+      const awayTeamId = espnAbbrToMlbTeamId(g.awayTeamAbbr);
+
+      const [
+        homeRichStats, awayRichStats,
+        homeStandings, awayStandings,
+        homeRecent, awayRecent,
+        homeLeaders, awayLeaders,
+        homeIL, awayIL,
+      ] = await Promise.all([
+        homeTeamId ? fetchMlbTeamStats(homeTeamId, season) : Promise.resolve(null),
+        awayTeamId ? fetchMlbTeamStats(awayTeamId, season) : Promise.resolve(null),
+        homeTeamId ? fetchMlbStandingsForTeam(homeTeamId, season) : Promise.resolve(null),
+        awayTeamId ? fetchMlbStandingsForTeam(awayTeamId, season) : Promise.resolve(null),
+        homeTeamId ? fetchMlbTeamRecentRecord(homeTeamId, gameDate) : Promise.resolve(null),
+        awayTeamId ? fetchMlbTeamRecentRecord(awayTeamId, gameDate) : Promise.resolve(null),
+        homeTeamId ? fetchMlbTeamLeaders(homeTeamId, season) : Promise.resolve(null),
+        awayTeamId ? fetchMlbTeamLeaders(awayTeamId, season) : Promise.resolve(null),
+        homeTeamId ? fetchMlbInjuredPlayers(homeTeamId, season) : Promise.resolve([]),
+        awayTeamId ? fetchMlbInjuredPlayers(awayTeamId, season) : Promise.resolve([]),
+      ]);
+
+      sportData = {
+        ...(espnSportData as Record<string, unknown>),
+        homeRichStats: homeRichStats ? (homeRichStats as unknown as Prisma.InputJsonObject) : undefined,
+        awayRichStats: awayRichStats ? (awayRichStats as unknown as Prisma.InputJsonObject) : undefined,
+        homeStandings: homeStandings
+          ? {
+              wins: homeStandings.wins,
+              losses: homeStandings.losses,
+              winPct: homeStandings.winPct,
+              gamesBack: homeStandings.gamesBack,
+              wildCardBack: homeStandings.wildCardBack,
+              streak: homeStandings.streak,
+              last10: homeStandings.last10,
+            }
+          : undefined,
+        awayStandings: awayStandings
+          ? {
+              wins: awayStandings.wins,
+              losses: awayStandings.losses,
+              winPct: awayStandings.winPct,
+              gamesBack: awayStandings.gamesBack,
+              wildCardBack: awayStandings.wildCardBack,
+              streak: awayStandings.streak,
+              last10: awayStandings.last10,
+            }
+          : undefined,
+        homeLast10: homeRecent?.last10 ?? homeStandings?.last10 ?? undefined,
+        awayLast10: awayRecent?.last10 ?? awayStandings?.last10 ?? undefined,
+        homeStreak: homeRecent?.streak ?? homeStandings?.streak ?? undefined,
+        awayStreak: awayRecent?.streak ?? awayStandings?.streak ?? undefined,
+        homeLeaders: homeLeaders ? (homeLeaders as unknown as Prisma.InputJsonObject) : undefined,
+        awayLeaders: awayLeaders ? (awayLeaders as unknown as Prisma.InputJsonObject) : undefined,
+        homeIL: homeIL && homeIL.length > 0 ? (homeIL as unknown as Prisma.InputJsonArray) : undefined,
+        awayIL: awayIL && awayIL.length > 0 ? (awayIL as unknown as Prisma.InputJsonArray) : undefined,
+      };
+    }
+
     await prisma.game.upsert({
       where: { espnEventId: g.espnEventId },
       create: {
@@ -72,16 +196,18 @@ export async function scanMlbGameDay(sport: SportConfig, _todayDateStr: string):
         homeStats: g.homeStats,
         awayStats: g.awayStats,
       },
-      update: {
-        homeTeam: g.homeTeam,
-        awayTeam: g.awayTeam,
-        homeTeamAbbr: g.homeTeamAbbr,
-        awayTeamAbbr: g.awayTeamAbbr,
-        scheduledAt: g.scheduledAt,
-        sportData,
-        homeStats: g.homeStats,
-        awayStats: g.awayStats,
-      },
+      update: isPublished
+        ? {}
+        : {
+            homeTeam: g.homeTeam,
+            awayTeam: g.awayTeam,
+            homeTeamAbbr: g.homeTeamAbbr,
+            awayTeamAbbr: g.awayTeamAbbr,
+            scheduledAt: g.scheduledAt,
+            sportData,
+            homeStats: g.homeStats,
+            awayStats: g.awayStats,
+          },
     });
   }
 
@@ -186,6 +312,18 @@ export function buildMlbPromptContext(game: Game, pick: SportPickResult): MlbGam
     favoredTeam: pick.favoredTeam === 'draw' ? 'home' : pick.favoredTeam,
     hasOdds: pick.hasOdds,
     pickLabel: pick.pickLabel,
+    homeRichStats: normalizeRichStats(mlbData.homeRichStats),
+    awayRichStats: normalizeRichStats(mlbData.awayRichStats),
+    homeStandings: mlbData.homeStandings ?? null,
+    awayStandings: mlbData.awayStandings ?? null,
+    homeLast10: mlbData.homeLast10 ?? null,
+    awayLast10: mlbData.awayLast10 ?? null,
+    homeStreak: mlbData.homeStreak ?? null,
+    awayStreak: mlbData.awayStreak ?? null,
+    homeLeaders: mlbData.homeLeaders ?? null,
+    awayLeaders: mlbData.awayLeaders ?? null,
+    homeIL: mlbData.homeIL ?? null,
+    awayIL: mlbData.awayIL ?? null,
   };
 }
 

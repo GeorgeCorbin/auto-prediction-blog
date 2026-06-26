@@ -1,5 +1,47 @@
 import { pickFromPool } from '@/lib/sports/helpers';
 
+interface MlbRichTeamStats {
+  avg: string | null;
+  obp: string | null;
+  slg: string | null;
+  ops: string | null;
+  runsPerGame: string | null;
+  homeRuns: number | null;
+  era: string | null;
+  whip: string | null;
+  kPer9: string | null;
+  oppAvg: string | null;
+}
+
+interface MlbPlayerLeader {
+  name: string;
+  value: string;
+}
+
+interface MlbTeamLeaders {
+  battingAvg?: MlbPlayerLeader[];
+  homeRuns?: MlbPlayerLeader[];
+  rbi?: MlbPlayerLeader[];
+  ops?: MlbPlayerLeader[];
+  era?: MlbPlayerLeader[];
+  strikeouts?: MlbPlayerLeader[];
+}
+
+interface MlbILPlayer {
+  name: string;
+  ilType: string;
+}
+
+interface MlbStandingsEntry {
+  wins?: number;
+  losses?: number;
+  winPct?: string;
+  gamesBack?: string;
+  wildCardBack?: string;
+  streak?: string;
+  last10?: string;
+}
+
 export interface MlbGameContext {
   variationSeed: string;
   homeTeam: string;
@@ -23,6 +65,18 @@ export interface MlbGameContext {
   favoredTeam: 'home' | 'away';
   hasOdds: boolean;
   pickLabel: string;
+  homeRichStats: MlbRichTeamStats | null;
+  awayRichStats: MlbRichTeamStats | null;
+  homeStandings: MlbStandingsEntry | null;
+  awayStandings: MlbStandingsEntry | null;
+  homeLast10: string | null;
+  awayLast10: string | null;
+  homeStreak: string | null;
+  awayStreak: string | null;
+  homeLeaders: MlbTeamLeaders | null;
+  awayLeaders: MlbTeamLeaders | null;
+  homeIL: MlbILPlayer[] | null;
+  awayIL: MlbILPlayer[] | null;
 }
 
 function formatMoneyline(ml: number): string {
@@ -84,14 +138,14 @@ Over/Under: ${ctx.total}`
     : '';
 
   const structureWithOdds = `1. Opening paragraph: state the matchup, date, and your headline pick recommendation
-2. Home team analysis: weave their batting average, runs per game, OPS, and ERA naturally into full sentences — e.g. "The Braves rank among the league leaders with a .265 team average and 4.8 runs per game, while their rotation carries a 3.81 ERA." Do not use bullet points or stat lists.
-3. Away team analysis: same approach — weave their key numbers into flowing prose sentences. Mention the starting pitcher by name with their record and ERA embedded in a sentence.
-4. Prediction reasoning: contrast the two sides' stats in paragraph form, reference the betting line, and arrive at the pick naturally through the analysis — no standalone pick callout`;
+2. Home team analysis: weave their batting average, runs per game, OPS, and ERA naturally into full sentences. Name at least 1–2 individual players from the ROSTER LEADERS section (e.g. batting avg leader, HR leader) with their exact stat value. If there are IL players listed, mention any notable absence briefly. Do not use bullet points or stat lists.
+3. Away team analysis: same approach — name 1–2 key contributors from their ROSTER LEADERS with stats. Mention the starting pitcher by name with their record and ERA. Note any impactful IL absences.
+4. Prediction reasoning: contrast the two sides' stats and key players in paragraph form, reference the betting line, and arrive at the pick naturally through the analysis — no standalone pick callout`;
 
   const structureWithoutOdds = `1. Opening paragraph: state the matchup, date, and your headline pick recommendation
-2. Home team analysis: weave their batting average, runs per game, OPS, and ERA naturally into full sentences — e.g. "The Braves rank among the league leaders with a .265 team average and 4.8 runs per game, while their rotation carries a 3.81 ERA." Do not use bullet points or stat lists.
-3. Away team analysis: same approach — weave their key numbers into flowing prose sentences. Mention the starting pitcher by name with their record and ERA embedded in a sentence.
-4. Prediction reasoning: contrast the two sides' stats in paragraph form and arrive at the pick naturally through the analysis — no standalone pick callout; do not reference betting lines`;
+2. Home team analysis: weave their batting average, runs per game, OPS, and ERA naturally into full sentences. Name at least 1–2 individual players from the ROSTER LEADERS section (batting avg, HR, or RBI leader) with their exact stat value. Mention any notable IL absences briefly. Do not use bullet points or stat lists.
+3. Away team analysis: same approach — name 1–2 key contributors from their ROSTER LEADERS with stats. Mention the starting pitcher by name with their record and ERA. Note any impactful IL absences.
+4. Prediction reasoning: contrast the two sides' stats and key players in paragraph form and arrive at the pick naturally through the analysis — no standalone pick callout; do not reference betting lines`;
 
   const systemPrompt = `You are a professional sports analyst writing MLB game prediction articles for a sports prediction blog. Your writing style is authoritative, data-driven, and engaging — similar to ESPN or The Athletic. Write in the third person and avoid using "I".
 
@@ -111,6 +165,63 @@ ANTI-REPETITION:
     .filter(([k]) => k !== 'record')
     .map(([k, v]) => `${k}: ${v}`)
     .join(', ');
+
+  function richStatLine(rich: MlbRichTeamStats | null): string {
+    if (!rich) return '(unavailable)';
+    const parts: string[] = [];
+    if (rich.avg) parts.push(`AVG: ${rich.avg}`);
+    if (rich.obp) parts.push(`OBP: ${rich.obp}`);
+    if (rich.slg) parts.push(`SLG: ${rich.slg}`);
+    if (rich.ops) parts.push(`OPS: ${rich.ops}`);
+    if (rich.runsPerGame) parts.push(`R/G: ${rich.runsPerGame}`);
+    if (rich.homeRuns != null) parts.push(`HR: ${rich.homeRuns}`);
+    if (rich.era) parts.push(`Team ERA: ${rich.era}`);
+    if (rich.whip) parts.push(`WHIP: ${rich.whip}`);
+    if (rich.kPer9) parts.push(`K/9: ${rich.kPer9}`);
+    if (rich.oppAvg) parts.push(`Opp AVG: ${rich.oppAvg}`);
+    return parts.length > 0 ? parts.join(', ') : '(unavailable)';
+  }
+
+  function standingsLine(s: MlbStandingsEntry | null, last10: string | null, streak: string | null): string {
+    if (!s) return '(unavailable)';
+    const parts: string[] = [];
+    if (s.wins !== undefined && s.losses !== undefined) parts.push(`${s.wins}-${s.losses}`);
+    if (s.winPct) parts.push(`WPct: ${s.winPct}`);
+    if (s.gamesBack) parts.push(`GB: ${s.gamesBack}`);
+    if (s.wildCardBack) parts.push(`WC GB: ${s.wildCardBack}`);
+    if (last10) parts.push(`Last 10: ${last10}`);
+    if (streak) parts.push(`Streak: ${streak}`);
+    return parts.length > 0 ? parts.join(', ') : '(unavailable)';
+  }
+
+  function formatLeaders(leaders: MlbTeamLeaders | null): string {
+    if (!leaders) return '  (unavailable)';
+    const lines: string[] = [];
+    if (leaders.battingAvg?.length) {
+      lines.push(`  Batting AVG: ${leaders.battingAvg.map((p) => `${p.name} (${p.value})`).join(', ')}`);
+    }
+    if (leaders.homeRuns?.length) {
+      lines.push(`  Home Runs: ${leaders.homeRuns.map((p) => `${p.name} (${p.value})`).join(', ')}`);
+    }
+    if (leaders.rbi?.length) {
+      lines.push(`  RBI: ${leaders.rbi.map((p) => `${p.name} (${p.value})`).join(', ')}`);
+    }
+    if (leaders.ops?.length) {
+      lines.push(`  OPS: ${leaders.ops.map((p) => `${p.name} (${p.value})`).join(', ')}`);
+    }
+    if (leaders.era?.length) {
+      lines.push(`  ERA leaders: ${leaders.era.map((p) => `${p.name} (${p.value})`).join(', ')}`);
+    }
+    if (leaders.strikeouts?.length) {
+      lines.push(`  Strikeout leaders: ${leaders.strikeouts.map((p) => `${p.name} (${p.value})`).join(', ')}`);
+    }
+    return lines.length > 0 ? lines.join('\n') : '  (unavailable)';
+  }
+
+  function formatIL(il: MlbILPlayer[] | null): string {
+    if (!il || il.length === 0) return 'None reported';
+    return il.map((p) => `${p.name} (${p.ilType})`).join(', ');
+  }
 
   const userPrompt = `Write a 400–600 word MLB game prediction article for the following matchup. Output ONLY the article text — no JSON, no markdown headers using # syntax except the title line.
 
@@ -137,9 +248,27 @@ GAME DETAILS:
 - ${ctx.awayTeam} Record: ${ctx.awayRecord}
 - ${ctx.homeTeam} Record: ${ctx.homeRecord}
 
-TEAM STATS (season averages):
+STANDINGS & RECENT FORM:
+${ctx.awayTeam}: ${standingsLine(ctx.awayStandings, ctx.awayLast10, ctx.awayStreak)}
+${ctx.homeTeam}: ${standingsLine(ctx.homeStandings, ctx.homeLast10, ctx.homeStreak)}
+
+TEAM STATS (season, from MLB Stats API):
+${ctx.awayTeam}: ${richStatLine(ctx.awayRichStats)}
+${ctx.homeTeam}: ${richStatLine(ctx.homeRichStats)}
+
+TEAM STATS (ESPN season averages — use if MLB Stats API row above is unavailable):
 ${ctx.awayTeam}: ${Object.entries(ctx.awayStats).map(([k, v]) => `${k}: ${v}`).join(', ')}
 ${ctx.homeTeam}: ${Object.entries(ctx.homeStats).map(([k, v]) => `${k}: ${v}`).join(', ')}
+
+ROSTER LEADERS (season):
+${ctx.awayTeam}:
+${formatLeaders(ctx.awayLeaders)}
+${ctx.homeTeam}:
+${formatLeaders(ctx.homeLeaders)}
+
+INJURED LIST:
+${ctx.awayTeam}: ${formatIL(ctx.awayIL)}
+${ctx.homeTeam}: ${formatIL(ctx.homeIL)}
 
 PROBABLE STARTERS:
 ${ctx.awayTeam}: ${ctx.awayPitcher} — ${awayPitcherLine}

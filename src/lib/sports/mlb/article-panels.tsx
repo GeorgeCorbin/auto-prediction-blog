@@ -2,6 +2,25 @@ import type { Game } from '@prisma/client';
 import { parseMlbSportData } from './schema';
 import { safeJsonRecord } from '@/lib/sports/helpers';
 
+type RichStats = {
+  avg?: string | null;
+  obp?: string | null;
+  slg?: string | null;
+  ops?: string | null;
+  runsPerGame?: string | null;
+  homeRuns?: number | null;
+  era?: string | null;
+  whip?: string | null;
+  kPer9?: string | null;
+  oppAvg?: string | null;
+};
+
+function richStr(rich: RichStats | null | undefined, key: keyof RichStats): string | null {
+  if (!rich) return null;
+  const v = rich[key];
+  return v != null ? String(v) : null;
+}
+
 /* ─── Types ───────────────────────────────────────────────────── */
 
 type PitcherStats = {
@@ -157,49 +176,82 @@ function InlineStatRow({ label, awayVal, homeVal, lowerIsBetter = false }: Inlin
  * Renders as a borderless aside so it reads as part of the content flow.
  */
 export function MlbInlineStats({ game }: { game: Game }) {
+  const mlbData = parseMlbSportData(game.sportData);
+  const homeRich = mlbData.homeRichStats as RichStats | null | undefined;
+  const awayRich = mlbData.awayRichStats as RichStats | null | undefined;
+
   const homeTeamStats = safeJsonRecord(game.homeStats);
   const awayTeamStats = safeJsonRecord(game.awayStats);
+
+  const homeStandings = mlbData.homeStandings;
+  const awayStandings = mlbData.awayStandings;
 
   const statDefs: InlineStatItem[] = [
     {
       label: 'Batting Avg',
-      awayVal: getStatStr(awayTeamStats, ['AVG', 'BA', 'Avg']),
-      homeVal: getStatStr(homeTeamStats, ['AVG', 'BA', 'Avg']),
+      awayVal: richStr(awayRich, 'avg') ?? getStatStr(awayTeamStats, ['AVG', 'BA', 'Avg']),
+      homeVal: richStr(homeRich, 'avg') ?? getStatStr(homeTeamStats, ['AVG', 'BA', 'Avg']),
     },
     {
-      label: 'Runs / Game',
-      awayVal: getStatStr(awayTeamStats, ['Runs', 'Runs Per Game', 'R/G', 'R']),
-      homeVal: getStatStr(homeTeamStats, ['Runs', 'Runs Per Game', 'R/G', 'R']),
+      label: 'OBP',
+      awayVal: richStr(awayRich, 'obp') ?? getStatStr(awayTeamStats, ['OBP']),
+      homeVal: richStr(homeRich, 'obp') ?? getStatStr(homeTeamStats, ['OBP']),
+    },
+    {
+      label: 'SLG',
+      awayVal: richStr(awayRich, 'slg') ?? getStatStr(awayTeamStats, ['SLG']),
+      homeVal: richStr(homeRich, 'slg') ?? getStatStr(homeTeamStats, ['SLG']),
     },
     {
       label: 'OPS',
-      awayVal: getStatStr(awayTeamStats, ['OPS']),
-      homeVal: getStatStr(homeTeamStats, ['OPS']),
+      awayVal: richStr(awayRich, 'ops') ?? getStatStr(awayTeamStats, ['OPS']),
+      homeVal: richStr(homeRich, 'ops') ?? getStatStr(homeTeamStats, ['OPS']),
+    },
+    {
+      label: 'Runs / Game',
+      awayVal: richStr(awayRich, 'runsPerGame') ?? getStatStr(awayTeamStats, ['Runs', 'Runs Per Game', 'R/G', 'R']),
+      homeVal: richStr(homeRich, 'runsPerGame') ?? getStatStr(homeTeamStats, ['Runs', 'Runs Per Game', 'R/G', 'R']),
     },
     {
       label: 'Home Runs',
-      awayVal: getStatStr(awayTeamStats, ['HR', 'Home Runs']),
-      homeVal: getStatStr(homeTeamStats, ['HR', 'Home Runs']),
+      awayVal: richStr(awayRich, 'homeRuns') ?? getStatStr(awayTeamStats, ['HR', 'Home Runs']),
+      homeVal: richStr(homeRich, 'homeRuns') ?? getStatStr(homeTeamStats, ['HR', 'Home Runs']),
     },
     {
       label: 'Team ERA',
-      awayVal: getStatStr(awayTeamStats, ['ERA', 'Team ERA', 'teamERA']),
-      homeVal: getStatStr(homeTeamStats, ['ERA', 'Team ERA', 'teamERA']),
+      awayVal: richStr(awayRich, 'era') ?? getStatStr(awayTeamStats, ['ERA', 'Team ERA', 'teamERA']),
+      homeVal: richStr(homeRich, 'era') ?? getStatStr(homeTeamStats, ['ERA', 'Team ERA', 'teamERA']),
       lowerIsBetter: true,
     },
     {
       label: 'WHIP',
-      awayVal: getStatStr(awayTeamStats, ['WHIP']),
-      homeVal: getStatStr(homeTeamStats, ['WHIP']),
+      awayVal: richStr(awayRich, 'whip') ?? getStatStr(awayTeamStats, ['WHIP']),
+      homeVal: richStr(homeRich, 'whip') ?? getStatStr(homeTeamStats, ['WHIP']),
       lowerIsBetter: true,
     },
-    // TODO: Add OBP, SLG, K/9, OppAVG, home/away splits once ESPN stat keys are confirmed.
-    // TODO: Add head-to-head record row when H2H data source is integrated.
-    // TODO: Add recent form (last 10) once a rolling results feed is available.
+    {
+      label: 'K/9',
+      awayVal: richStr(awayRich, 'kPer9') ?? null,
+      homeVal: richStr(homeRich, 'kPer9') ?? null,
+    },
+    {
+      label: 'Opp AVG',
+      awayVal: richStr(awayRich, 'oppAvg') ?? null,
+      homeVal: richStr(homeRich, 'oppAvg') ?? null,
+      lowerIsBetter: true,
+    },
   ];
 
   const visibleStats = statDefs.filter((s) => s.awayVal || s.homeVal);
   if (visibleStats.length === 0) return null;
+
+  const hasStandings = homeStandings || awayStandings;
+  const homeLast10 = mlbData.homeLast10;
+  const awayLast10 = mlbData.awayLast10;
+  const homeStreak = mlbData.homeStreak;
+  const awayStreak = mlbData.awayStreak;
+
+  const usingRichSource = !!(homeRich || awayRich);
 
   return (
     <aside className="my-6 rounded border border-[#E5E7EB] overflow-hidden">
@@ -213,10 +265,29 @@ export function MlbInlineStats({ game }: { game: Game }) {
           <InlineStatRow key={s.label} {...s} />
         ))}
       </div>
+      {hasStandings && (
+        <div className="px-3 bg-white border-t border-[#E5E7EB]">
+          {(homeLast10 || awayLast10) && (
+            <InlineStatRow label="Last 10" awayVal={awayLast10 ?? null} homeVal={homeLast10 ?? null} />
+          )}
+          {(homeStreak || awayStreak) && (
+            <InlineStatRow label="Streak" awayVal={awayStreak ?? null} homeVal={homeStreak ?? null} />
+          )}
+          {(homeStandings?.gamesBack !== undefined || awayStandings?.gamesBack !== undefined) && (
+            <InlineStatRow
+              label="GB"
+              awayVal={awayStandings?.gamesBack ?? null}
+              homeVal={homeStandings?.gamesBack ?? null}
+              lowerIsBetter
+            />
+          )}
+        </div>
+      )}
       <div className="px-3 py-1.5 bg-[#F9FAFB] border-t border-[#E5E7EB]">
-        <p className="text-[10px] text-[#9CA3AF]">Season averages · Source: ESPN. Orange = statistical edge.</p>
+        <p className="text-[10px] text-[#9CA3AF]">
+          Season averages · Source: {usingRichSource ? 'MLB Stats API' : 'ESPN'}. Orange = statistical edge.
+        </p>
       </div>
-      {/* TODO: Key injuries row — render here when injury data is available. */}
     </aside>
   );
 }
