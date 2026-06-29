@@ -71,6 +71,7 @@ function FeaturedCard({ article }: { article: ArticleWithGame }) {
             fill
             style={{ objectFit: 'cover' }}
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 65vw, 800px"
+            priority
           />
         ) : article.articleType !== 'game' ? (
           <EvergreenCardThumbnail evergreenData={(article as unknown as Record<string,unknown>).evergreenData ?? null} sport={article.sport} label={EVERGREEN_LABEL[article.articleType ?? ''] ?? 'Analysis'} articleType={article.articleType ?? ''} />
@@ -80,6 +81,7 @@ function FeaturedCard({ article }: { article: ArticleWithGame }) {
             alt={article.imageAlt ?? article.title}
             wide
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 65vw, 800px"
+            priority
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />

@@ -358,8 +358,12 @@ export default async function ArticlePage({ params }: Props) {
     description: article.metaDescription,
   };
 
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? '';
+  const heroImageUrl = article.featuredImageUrl ?? `${siteUrl}/api/matchup/${slug}`;
+
   return (
     <>
+      <link rel="preload" as="image" href={heroImageUrl} fetchPriority="high" />
       <ArticleViewTracker articleId={article.id} />
       <script
         type="application/ld+json"

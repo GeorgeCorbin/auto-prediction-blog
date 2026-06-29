@@ -8,6 +8,7 @@ const STATIC_PAGES: Array<{
   changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency'];
   priority: number;
 }> = [
+  { path: '/analysis', changeFrequency: 'daily', priority: 0.85 },
   { path: '/teams', changeFrequency: 'weekly', priority: 0.7 },
   { path: '/about', changeFrequency: 'monthly', priority: 0.5 },
   { path: '/contact', changeFrequency: 'monthly', priority: 0.5 },
@@ -23,13 +24,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     {
       url: siteUrl,
       lastModified: now,
-      changeFrequency: 'hourly',
+      changeFrequency: 'daily',
       priority: 1,
     },
     ...getActiveSports().map(({ key }) => ({
       url: `${siteUrl}/${key}`,
       lastModified: now,
-      changeFrequency: 'hourly' as const,
+      changeFrequency: 'daily' as const,
       priority: 0.9,
     })),
     ...STATIC_PAGES.map(({ path, changeFrequency, priority }) => ({
@@ -45,18 +46,24 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       select: {
         slug: true,
         sport: true,
+        publishedAt: true,
         updatedAt: true,
+        articleType: true,
         game: { select: { homeTeam: true, awayTeam: true } },
       },
       orderBy: { publishedAt: 'desc' },
     });
 
-    const articleUrls: MetadataRoute.Sitemap = articles.map((article) => ({
-      url: `${siteUrl}/${article.sport}/${article.slug}`,
-      lastModified: article.updatedAt,
-      changeFrequency: 'daily',
-      priority: 0.8,
-    }));
+    const articleUrls: MetadataRoute.Sitemap = articles.map((article) => {
+      // Evergreen articles update more frequently than game recaps
+      const isEvergreen = !!article.articleType;
+      return {
+        url: `${siteUrl}/${article.sport}/${article.slug}`,
+        lastModified: article.updatedAt,
+        changeFrequency: isEvergreen ? ('weekly' as const) : ('monthly' as const),
+        priority: isEvergreen ? 0.8 : 0.7,
+      };
+    });
 
     const teamLastModified = new Map<string, Date>();
     for (const article of articles) {

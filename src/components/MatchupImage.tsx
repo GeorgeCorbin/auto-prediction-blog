@@ -29,7 +29,6 @@ export function MatchupImage({
       style={{ objectFit: 'cover' }}
       sizes={sizes}
       priority={priority}
-      unoptimized
     />
   );
 }

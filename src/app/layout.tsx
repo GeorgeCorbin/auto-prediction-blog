@@ -42,12 +42,14 @@ export default function RootLayout({
         <link rel="shortcut icon" href="/favicon.ico?v=20260619" />
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=20260619" />
         <link rel="manifest" href="/site.webmanifest?v=20260619" />
-        <Script
-          async
-          src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${process.env.NEXT_PUBLIC_ADSENSE_PUBLISHER_ID}`}
-          crossOrigin="anonymous"
-          strategy="afterInteractive"
-        />
+        {process.env.NEXT_PUBLIC_ADS_ENABLED === 'true' && (
+          <Script
+            async
+            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${process.env.NEXT_PUBLIC_ADSENSE_PUBLISHER_ID}`}
+            crossOrigin="anonymous"
+            strategy="afterInteractive"
+          />
+        )}
         {gaId ? (
           <>
             <Script
