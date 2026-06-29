@@ -17,6 +17,19 @@ import { SiteFooter } from '@/components/SiteFooter';
 import { formatAmericanOdds, formatSpreadPoint } from '@/lib/odds/format';
 import { SportArticlePanels } from '@/lib/sports/article-panels';
 import { teamNameToSlug } from '@/lib/teams';
+import { EvergreenContent } from '@/components/EvergreenContent';
+import { EvergreenHero } from '@/components/EvergreenHero';
+import { EvergreenCardThumbnail } from '@/components/EvergreenCardThumbnail';
+
+const EVERGREEN_LABEL: Record<string, string> = {
+  'power-rankings': 'Power Rankings',
+  'win-totals': 'Win Totals',
+  'matchup-cheat-sheet': 'Cheat Sheet',
+  'betting-trends': 'Betting Trends',
+  'playoff-picture': 'Playoff Picture',
+  'award-races': 'Award Races',
+  'team-profile': 'Team Profile',
+};
 
 export const revalidate = 3600;
 
@@ -88,7 +101,8 @@ function timeAgo(date: Date): string {
 
 function getExcerpt(content: string, maxLength = 120): string {
   const first = content.split(/\n\n+/)[0]?.trim() ?? '';
-  return first.length <= maxLength ? first : first.slice(0, maxLength).trimEnd() + '…';
+  const clean = first.replace(/\*\*/g, '').replace(/[#*_~`]/g, '');
+  return clean.length <= maxLength ? clean : clean.slice(0, maxLength).trimEnd() + '…';
 }
 
 type ArticleWithGame = Awaited<
@@ -168,8 +182,11 @@ function RelatedCard({
     publishedAt: Date;
     featuredImageUrl: string | null;
     imageAlt: string | null;
+    articleType?: string | null;
+    evergreenData?: unknown;
   };
 }) {
+  const isEg = article.articleType && article.articleType !== 'game';
   return (
     <Link href={`/${article.sport}/${article.slug}`} className="group block">
       <div className="relative w-full bg-[#D1D5DB] mb-3 overflow-hidden" style={{ aspectRatio: '4/3' }}>
@@ -180,6 +197,13 @@ function RelatedCard({
             fill
             style={{ objectFit: 'cover' }}
             sizes="(max-width: 640px) 100vw, 33vw"
+          />
+        ) : isEg ? (
+          <EvergreenCardThumbnail
+            evergreenData={article.evergreenData ?? null}
+            sport={article.sport}
+            label={EVERGREEN_LABEL[article.articleType!] ?? 'Analysis'}
+            articleType={article.articleType!}
           />
         ) : (
           <MatchupImage
@@ -219,6 +243,23 @@ export default async function ArticlePage({ params }: Props) {
   if (!article || article.sport !== sport) notFound();
 
   const game = article.game!;
+  const EVERGREEN_TYPES = new Set([
+    'power-rankings', 'win-totals', 'matchup-cheat-sheet',
+    'betting-trends', 'playoff-picture', 'award-races', 'team-profile',
+  ]);
+  const isEvergreen = EVERGREEN_TYPES.has(article.articleType ?? '');
+  const evergreenLabel: Record<string, string> = {
+    'power-rankings': 'Power Rankings',
+    'win-totals': 'Win-Total Tracker',
+    'matchup-cheat-sheet': 'Cheat Sheet',
+    'betting-trends': 'Betting Trends',
+    'playoff-picture': 'Playoff Picture',
+    'award-races': 'Award Races',
+    'team-profile': 'Team Profile',
+  };
+  const evergreenBadge = isEvergreen
+    ? (evergreenLabel[article.articleType] ?? 'Analysis')
+    : null;
 
   // Related articles
   let related: {
@@ -229,6 +270,8 @@ export default async function ArticlePage({ params }: Props) {
     publishedAt: Date;
     featuredImageUrl: string | null;
     imageAlt: string | null;
+    articleType: string | null;
+    evergreenData: unknown;
   }[] = [];
   try {
     related = await prisma.article.findMany({
@@ -243,6 +286,8 @@ export default async function ArticlePage({ params }: Props) {
         publishedAt: true,
         featuredImageUrl: true,
         imageAlt: true,
+        articleType: true,
+        evergreenData: true,
       },
     });
   } catch { /* ignore */ }
@@ -271,6 +316,7 @@ export default async function ArticlePage({ params }: Props) {
 
   const gameDateTimeEt = formatEasternDateTimeFallback(game.scheduledAt);
   const publishedAtEt = formatEasternDateTimeFallback(article.publishedAt);
+
 
   const articleUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/${sport}/${slug}`;
   const authorName = getArticleAuthor(article, game);
@@ -332,7 +378,7 @@ export default async function ArticlePage({ params }: Props) {
           </Link>
           <span>/</span>
           <span className="text-[#4B5563] truncate max-w-[200px]">
-            {game.awayTeam} vs {game.homeTeam}
+            {isEvergreen ? (evergreenBadge ?? 'Analysis') : `${game.awayTeam} vs ${game.homeTeam}`}
           </span>
         </nav>
 
@@ -342,7 +388,7 @@ export default async function ArticlePage({ params }: Props) {
             {/* Article header */}
             <header className="mb-6">
               <h1 className="font-serif text-[28px] sm:text-[36px] font-bold text-[#1A1A1A] leading-[1.2] mb-4">
-                {article.title}
+                {article.title.replace(/\*\*/g, '')}
               </h1>
               <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
@@ -364,7 +410,7 @@ export default async function ArticlePage({ params }: Props) {
                 </div>
                 <div className="w-px h-6 bg-[#E5E7EB]" />
                 <span className="text-[13px] font-semibold text-[#FF6B2C] uppercase tracking-[0.05em]">
-                  {sport.toUpperCase()}
+                  {isEvergreen && evergreenBadge ? evergreenBadge : sport.toUpperCase()}
                 </span>
                 <div className="ml-auto">
                   <ShareButtons url={articleUrl} title={article.title} />
@@ -386,13 +432,27 @@ export default async function ArticlePage({ params }: Props) {
                   />
                 </div>
                 <p className="text-[11px] text-[#9CA3AF] mb-6">
-                  {game.awayTeam} vs {game.homeTeam} ·{' '}
-                  <LocalDateTime
-                    iso={game.scheduledAt.toISOString()}
-                    fallback={gameDateTimeEt}
-                    className="text-[11px] text-[#9CA3AF]"
+                  {isEvergreen ? (
+                    <>Updated <LocalDateTime iso={article.publishedAt.toISOString()} fallback={publishedAtEt} className="text-[11px] text-[#9CA3AF]" /></>
+                  ) : (
+                    <>{game.awayTeam} vs {game.homeTeam} ·{' '}
+                    <LocalDateTime iso={game.scheduledAt.toISOString()} fallback={gameDateTimeEt} className="text-[11px] text-[#9CA3AF]" />
+                    {article.imageCredit ? ` · Photo: ${article.imageCredit}` : ''}</>
+                  )}
+                </p>
+              </>
+            ) : isEvergreen ? (
+              <>
+                <div className="w-full mb-2">
+                  <EvergreenHero
+                    badge={evergreenBadge ?? 'Analysis'}
+                    sport={sport}
+                    articleType={article.articleType ?? ''}
+                    evergreenData={article.evergreenData}
                   />
-                  {article.imageCredit ? ` · Photo: ${article.imageCredit}` : ''}
+                </div>
+                <p className="text-[11px] text-[#9CA3AF] mb-6">
+                  Updated <LocalDateTime iso={article.publishedAt.toISOString()} fallback={publishedAtEt} className="text-[11px] text-[#9CA3AF]" />
                 </p>
               </>
             ) : (
@@ -408,20 +468,9 @@ export default async function ArticlePage({ params }: Props) {
                 </div>
                 <p className="text-[11px] text-[#9CA3AF] mb-6">
                   {game.awayTeam} vs {game.homeTeam} ·{' '}
-                  <LocalDateTime
-                    iso={game.scheduledAt.toISOString()}
-                    fallback={gameDateTimeEt}
-                    className="text-[11px] text-[#9CA3AF]"
-                  />
+                  <LocalDateTime iso={game.scheduledAt.toISOString()} fallback={gameDateTimeEt} className="text-[11px] text-[#9CA3AF]" />
                 </p>
               </>
-            )}
-
-            {/* Intro paragraph with left accent */}
-            {paragraphs[0] && (
-              <div className="border-l-4 border-[#FF6B2C] pl-4 mb-6">
-                <p className="text-[16px] text-[#4B5563] leading-[1.75]">{paragraphs[0]}</p>
-              </div>
             )}
 
             {/* Top ad */}
@@ -429,8 +478,15 @@ export default async function ArticlePage({ params }: Props) {
               <AdSlot position="top" />
             </div>
 
-            {/* Odds table */}
-            {hasOdds && (
+            {/* Intro paragraph with left accent — game articles only */}
+            {!isEvergreen && paragraphs[0] && (
+              <div className="border-l-4 border-[#FF6B2C] pl-4 mb-6">
+                <p className="text-[16px] text-[#4B5563] leading-[1.75]">{paragraphs[0]}</p>
+              </div>
+            )}
+
+            {/* Odds table — game articles only */}
+            {!isEvergreen && hasOdds && (
               <section className="mb-8">
                 <h2 className="font-serif text-[22px] font-bold text-[#1A1A1A] mb-4">
                   {isSoccer ? "Today's Odds" : "Tonight's Odds"}
@@ -468,53 +524,64 @@ export default async function ArticlePage({ params }: Props) {
               </section>
             )}
 
-            <SportArticlePanels game={game} />
+            {!isEvergreen && <SportArticlePanels game={game} />}
 
-            {/* Article body paragraphs — stats widget interlaced after paragraph 2 */}
-            <div className="mb-8 space-y-4">
-              {paragraphs.slice(1).map((para, i) => (
-                <div key={i}>
-                  <p className="text-[16px] text-[#4B5563] leading-[1.75]">{para}</p>
-                  {i === 1 && (
-                    <div className="border border-[#E5E7EB] bg-[#F3F4F6] py-2 my-6">
-                      <AdSlot position="mid" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+            {/* Article body */}
+            {isEvergreen ? (
+              <EvergreenContent
+                content={article.content}
+                midAd={<AdSlot position="mid" />}
+              />
+            ) : (
+              <div className="mb-8 space-y-4">
+                {paragraphs.slice(1).map((para, i) => (
+                  <div key={i}>
+                    <p className="text-[16px] text-[#4B5563] leading-[1.75]">{para}</p>
+                    {i === 1 && (
+                      <div className="border border-[#E5E7EB] bg-[#F3F4F6] py-2 my-6">
+                        <AdSlot position="mid" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
-            {/* Best Bet box */}
-            <section className="border-l-4 border-[#FF6B2C] bg-[#FFF7ED] p-6 rounded-r mb-8">
-              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#FF6B2C] mb-2">
-                Best Bet
-              </p>
-              <p className="font-serif text-[28px] font-bold text-[#1A1A1A] mb-4">
-                {article.pick}
-              </p>
-              <p className="text-[14px] text-[#4B5563] leading-relaxed">
-                Based on the matchup analysis, recent form, and line value, {article.pick} is our
-                top play for this game.
-              </p>
-            </section>
+            {/* Best Bet box — game articles only */}
+            {!isEvergreen && (
+              <section className="border-l-4 border-[#FF6B2C] bg-[#FFF7ED] p-6 rounded-r mb-8">
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#FF6B2C] mb-2">
+                  Best Bet
+                </p>
+                <p className="font-serif text-[28px] font-bold text-[#1A1A1A] mb-4">
+                  {article.pick}
+                </p>
+                <p className="text-[14px] text-[#4B5563] leading-relaxed">
+                  Based on the matchup analysis, recent form, and line value, {article.pick} is our
+                  top play for this game.
+                </p>
+              </section>
+            )}
 
-            {/* Team page links — internal linking cluster */}
-            <div className="flex flex-wrap gap-3 mb-8">
-              <Link
-                href={`/teams/${teamNameToSlug(game.awayTeam)}`}
-                className="inline-flex items-center gap-1.5 border border-[#E5E7EB] rounded px-4 py-2.5 text-[13px] font-semibold text-[#1A1A1A] hover:border-[#FF6B2C] hover:text-[#FF6B2C] transition-colors"
-              >
-                <span className="text-[#9CA3AF]">All</span>
-                {game.awayTeam} Predictions
-              </Link>
-              <Link
-                href={`/teams/${teamNameToSlug(game.homeTeam)}`}
-                className="inline-flex items-center gap-1.5 border border-[#E5E7EB] rounded px-4 py-2.5 text-[13px] font-semibold text-[#1A1A1A] hover:border-[#FF6B2C] hover:text-[#FF6B2C] transition-colors"
-              >
-                <span className="text-[#9CA3AF]">All</span>
-                {game.homeTeam} Predictions
-              </Link>
-            </div>
+            {/* Team page links — game articles only */}
+            {!isEvergreen && (
+              <div className="flex flex-wrap gap-3 mb-8">
+                <Link
+                  href={`/teams/${teamNameToSlug(game.awayTeam)}`}
+                  className="inline-flex items-center gap-1.5 border border-[#E5E7EB] rounded px-4 py-2.5 text-[13px] font-semibold text-[#1A1A1A] hover:border-[#FF6B2C] hover:text-[#FF6B2C] transition-colors"
+                >
+                  <span className="text-[#9CA3AF]">All</span>
+                  {game.awayTeam} Predictions
+                </Link>
+                <Link
+                  href={`/teams/${teamNameToSlug(game.homeTeam)}`}
+                  className="inline-flex items-center gap-1.5 border border-[#E5E7EB] rounded px-4 py-2.5 text-[13px] font-semibold text-[#1A1A1A] hover:border-[#FF6B2C] hover:text-[#FF6B2C] transition-colors"
+                >
+                  <span className="text-[#9CA3AF]">All</span>
+                  {game.homeTeam} Predictions
+                </Link>
+              </div>
+            )}
 
             {/* Bottom ad */}
             <div className="border border-[#E5E7EB] bg-[#F3F4F6] py-2 mb-8">

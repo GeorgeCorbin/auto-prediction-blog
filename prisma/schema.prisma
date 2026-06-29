@@ -59,6 +59,8 @@ model Article {
   content           String   @db.Text
   pick              String   // e.g. "Dodgers -1.5"
   sport             String
+  articleType       String   @default("game") // "game" | "power-rankings" | "win-totals"
+  evergreenData     Json?    // structured data payload for evergreen articles
   publishedAt       DateTime @default(now())
   featuredImageUrl  String?
   imageAlt          String?

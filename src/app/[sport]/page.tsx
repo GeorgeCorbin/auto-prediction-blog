@@ -3,7 +3,8 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getArticleAuthor } from '@/lib/authors';
-import { getLatestArticlesBySport, getMostReadArticles } from '@/lib/articles/queries';
+import { getLatestArticlesBySport, getMostReadArticles, getEvergreenArticlesBySport } from '@/lib/articles/queries';
+import { EvergreenCardThumbnail } from '@/components/EvergreenCardThumbnail';
 import { MatchupImage } from '@/components/MatchupImage';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
@@ -40,7 +41,8 @@ async function getSportArticles(sport: string) {
 
 function getExcerpt(content: string, maxLength = 160): string {
   const first = content.split(/\n\n+/)[0]?.trim() ?? '';
-  return first.length <= maxLength ? first : first.slice(0, maxLength).trimEnd() + '…';
+  const clean = first.replace(/\*\*/g, '').replace(/[#*_~`]/g, '');
+  return clean.length <= maxLength ? clean : clean.slice(0, maxLength).trimEnd() + '…';
 }
 
 type ArticleWithGame = Awaited<ReturnType<typeof getSportArticles>>[number];
@@ -130,13 +132,26 @@ function FeaturedCard({ article, sport, label }: { article: ArticleWithGame; spo
   );
 }
 
+const EVERGREEN_LABEL: Record<string, string> = {
+  'power-rankings': 'Power Rankings',
+  'win-totals': 'Win-Total Tracker',
+  'matchup-cheat-sheet': 'Cheat Sheet',
+  'betting-trends': 'Betting Trends',
+  'playoff-picture': 'Playoff Picture',
+  'award-races': 'Award Races',
+  'team-profile': 'Team Profile',
+};
+
 export default async function SportIndexPage({ params }: Props) {
   const { sport } = await params;
   const config = getSportConfig(sport);
   if (!config || !config.enabled || !isSportInSeason(config)) notFound();
 
-  const articles = await getSportArticles(sport);
-  const mostReadArticles = await getMostReadArticles(5, sport);
+  const [articles, mostReadArticles, evergreenArticles] = await Promise.all([
+    getSportArticles(sport),
+    getMostReadArticles(5, sport),
+    getEvergreenArticlesBySport(sport, 3),
+  ]);
   const featuredArticles = articles.slice(0, 3);
   const listArticles = articles.slice(3);
   const tagline =
@@ -168,12 +183,59 @@ export default async function SportIndexPage({ params }: Props) {
             </p>
           </div>
         ) : (
+          <>
+          <div className="border border-[#E5E7EB] bg-[#F3F4F6] py-2 mb-8">
+            <AdSlot position="top" />
+          </div>
+
+          {evergreenArticles.length >= 3 && (
+            <section className="mb-10">
+              <div className="flex items-center gap-3 border-b-2 border-[#1A1A1A] pb-3 mb-5">
+                <div className="w-1 h-5 bg-[#FF6B2C] rounded-sm" />
+                <h2 className="font-sans text-base font-bold text-[#1A1A1A] tracking-tight">
+                  {config.label} Analysis &amp; Insights
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {evergreenArticles.map((a) => {
+                  const author = a.author ?? undefined;
+                  return (
+                    <Link key={a.id} href={`/${sport}/${a.slug}`} className="group flex flex-col border border-[#E5E7EB] rounded overflow-hidden hover:border-[#FF6B2C] transition-colors">
+                      <div className="relative w-full bg-[#F3F4F6]" style={{ aspectRatio: '16/9' }}>
+                        {a.featuredImageUrl ? (
+                          <Image src={a.featuredImageUrl} alt={a.imageAlt ?? a.title} fill style={{ objectFit: 'cover' }} sizes="(max-width: 640px) 100vw, 33vw" />
+                        ) : (
+                          <EvergreenCardThumbnail evergreenData={a.evergreenData} sport={a.sport} label={EVERGREEN_LABEL[a.articleType] ?? 'Analysis'} articleType={a.articleType} />
+                        )}
+                      </div>
+                      <div className="p-4 flex flex-col flex-1">
+                        <span className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">
+                          {EVERGREEN_LABEL[a.articleType] ?? 'Analysis'}
+                        </span>
+                        <h3 className="font-serif text-[15px] font-bold text-[#1A1A1A] leading-snug group-hover:text-[#FF6B2C] transition-colors line-clamp-2 mb-2">
+                          {a.title}
+                        </h3>
+                        {author && (
+                          <p className="text-[11px] text-[#9CA3AF] mt-auto">{author}</p>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+              <div className="mt-4 text-right">
+                <Link
+                  href="/analysis"
+                  className="inline-flex items-center gap-1 text-[13px] font-semibold text-[#FF6B2C] hover:underline"
+                >
+                  See all analysis →
+                </Link>
+              </div>
+            </section>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-12">
             <div>
-              <div className="border border-[#E5E7EB] bg-[#F3F4F6] py-2 mb-8">
-                <AdSlot position="top" />
-              </div>
-
               {featuredArticles.length > 0 && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8">
                   {featuredArticles.map((article) => (
@@ -234,6 +296,7 @@ export default async function SportIndexPage({ params }: Props) {
               </div>
             </aside>
           </div>
+          </>
         )}
       </div>
 

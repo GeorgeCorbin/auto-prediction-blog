@@ -10,6 +10,19 @@ export type ArticleWithGame = Awaited<
 export async function getLatestArticlesAllSports(take = 10) {
   try {
     return await prisma.article.findMany({
+      where: { articleType: 'game' },
+      take,
+      orderBy: { publishedAt: 'desc' },
+      ...articleWithGame,
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function getLatestFeedAllSports(take = 12) {
+  try {
+    return await prisma.article.findMany({
       take,
       orderBy: { publishedAt: 'desc' },
       ...articleWithGame,
@@ -22,7 +35,7 @@ export async function getLatestArticlesAllSports(take = 10) {
 export async function getLatestArticlesBySport(sport: string, take = 5) {
   try {
     return await prisma.article.findMany({
-      where: { sport },
+      where: { sport, articleType: 'game' },
       take,
       orderBy: { publishedAt: 'desc' },
       ...articleWithGame,
@@ -35,7 +48,7 @@ export async function getLatestArticlesBySport(sport: string, take = 5) {
 export async function getMostReadArticles(take = 5, sport?: string) {
   try {
     return await prisma.article.findMany({
-      where: sport ? { sport } : undefined,
+      where: sport ? { sport, articleType: 'game' } : { articleType: 'game' },
       take,
       orderBy: { viewCount: 'desc' },
       ...articleWithGame,
@@ -48,6 +61,7 @@ export async function getMostReadArticles(take = 5, sport?: string) {
 export async function getBestPredictions(take = 3) {
   try {
     const articles = await prisma.article.findMany({
+      where: { articleType: 'game' },
       take: 50,
       orderBy: { publishedAt: 'desc' },
       ...articleWithGame,
@@ -61,6 +75,56 @@ export async function getBestPredictions(take = 3) {
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, take)
       .map(({ article }) => article);
+  } catch {
+    return [];
+  }
+}
+
+export async function getEvergreenArticlesBySport(sport: string, take = 5) {
+  try {
+    return await prisma.article.findMany({
+      where: { sport, NOT: { articleType: 'game' } },
+      orderBy: { publishedAt: 'desc' },
+      take,
+      select: {
+        id: true,
+        title: true,
+        sport: true,
+        slug: true,
+        articleType: true,
+        publishedAt: true,
+        metaDescription: true,
+        featuredImageUrl: true,
+        imageAlt: true,
+        evergreenData: true,
+        author: true,
+      },
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function getAllEvergreenArticles(take = 50) {
+  try {
+    return await prisma.article.findMany({
+      where: { NOT: { articleType: 'game' } },
+      orderBy: { publishedAt: 'desc' },
+      take,
+      select: {
+        id: true,
+        title: true,
+        sport: true,
+        slug: true,
+        articleType: true,
+        publishedAt: true,
+        metaDescription: true,
+        featuredImageUrl: true,
+        imageAlt: true,
+        evergreenData: true,
+        author: true,
+      },
+    });
   } catch {
     return [];
   }

@@ -3,12 +3,14 @@ import Link from 'next/link';
 import { getArticleAuthor } from '@/lib/authors';
 import {
   getBestPredictions,
-  getLatestArticlesAllSports,
+  getLatestFeedAllSports,
   getLatestArticlesBySport,
   getMostReadArticles,
+  getEvergreenArticlesBySport,
   type ArticleWithGame,
 } from '@/lib/articles/queries';
 import { MatchupImage } from '@/components/MatchupImage';
+import { EvergreenCardThumbnail } from '@/components/EvergreenCardThumbnail';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
 import { AdSlot } from '@/components/AdSlot';
@@ -29,7 +31,8 @@ function timeAgo(date: Date): string {
 
 function getExcerpt(content: string, maxLength = 160): string {
   const first = content.split(/\n\n+/)[0]?.trim() ?? '';
-  return first.length <= maxLength ? first : first.slice(0, maxLength).trimEnd() + '…';
+  const clean = first.replace(/\*\*/g, '').replace(/[#*_~`]/g, '');
+  return clean.length <= maxLength ? clean : clean.slice(0, maxLength).trimEnd() + '…';
 }
 
 function SportTag({ sport }: { sport: string }) {
@@ -54,8 +57,9 @@ function SectionHeading({ children, href }: { children: React.ReactNode; href?: 
   );
 }
 
+
 function FeaturedCard({ article }: { article: ArticleWithGame }) {
-  const game = article.game;
+  const game = article.game ?? null;
   const authorName = getArticleAuthor(article, game);
   return (
     <Link href={`/${article.sport}/${article.slug}`} className="group block">
@@ -68,6 +72,8 @@ function FeaturedCard({ article }: { article: ArticleWithGame }) {
             style={{ objectFit: 'cover' }}
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 65vw, 800px"
           />
+        ) : article.articleType !== 'game' ? (
+          <EvergreenCardThumbnail evergreenData={(article as unknown as Record<string,unknown>).evergreenData ?? null} sport={article.sport} label={EVERGREEN_LABEL[article.articleType ?? ''] ?? 'Analysis'} articleType={article.articleType ?? ''} />
         ) : (
           <MatchupImage
             slug={article.slug}
@@ -100,7 +106,7 @@ function FeaturedCard({ article }: { article: ArticleWithGame }) {
 }
 
 function GridCard({ article }: { article: ArticleWithGame }) {
-  const game = article.game;
+  const game = article.game ?? null;
   const authorName = getArticleAuthor(article, game);
   return (
     <Link href={`/${article.sport}/${article.slug}`} className="group block">
@@ -113,6 +119,8 @@ function GridCard({ article }: { article: ArticleWithGame }) {
             style={{ objectFit: 'cover' }}
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 240px"
           />
+        ) : article.articleType !== 'game' ? (
+          <EvergreenCardThumbnail evergreenData={(article as unknown as Record<string,unknown>).evergreenData ?? null} sport={article.sport} label={EVERGREEN_LABEL[article.articleType ?? ''] ?? 'Analysis'} articleType={article.articleType ?? ''} />
         ) : (
           <MatchupImage
             slug={article.slug}
@@ -198,10 +206,20 @@ function CompactRow({ article }: { article: ArticleWithGame }) {
   );
 }
 
+const EVERGREEN_LABEL: Record<string, string> = {
+  'power-rankings': 'Power Rankings',
+  'win-totals': 'Win-Total Tracker',
+  'matchup-cheat-sheet': 'Cheat Sheet',
+  'betting-trends': 'Betting Trends',
+  'playoff-picture': 'Playoff Picture',
+  'award-races': 'Award Races',
+  'team-profile': 'Team Profile',
+};
+
 export default async function HomePage() {
   const activeSports = getActiveSports();
-  const [latestArticles, bestArticles, mostReadArticles, sportSections] = await Promise.all([
-    getLatestArticlesAllSports(10),
+  const [latestArticles, bestArticles, mostReadArticles, sportSections, evergreenSections] = await Promise.all([
+    getLatestFeedAllSports(12),
     getBestPredictions(3),
     getMostReadArticles(5),
     Promise.all(
@@ -210,9 +228,16 @@ export default async function HomePage() {
         articles: await getLatestArticlesBySport(sport.key, 4),
       })),
     ),
+    Promise.all(
+      activeSports.map(async (sport) => ({
+        sport,
+        articles: await getEvergreenArticlesBySport(sport.key, 3),
+      })),
+    ),
   ]);
   const [featured] = latestArticles;
   const latestSidebarArticles = latestArticles.slice(0, 5);
+  const allEvergreenArticles = evergreenSections.flatMap((s) => s.articles);
 
   return (
     <>
@@ -252,6 +277,46 @@ export default async function HomePage() {
                   </div>
                 </section>
               ) : null,
+            )}
+
+            {allEvergreenArticles.length > 0 && (
+              <section className="mb-12">
+                <SectionHeading href="/analysis">Analysis &amp; Insights</SectionHeading>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {allEvergreenArticles.slice(0, 6).map((a) => (
+                    <Link
+                      key={a.id}
+                      href={`/${a.sport}/${a.slug}`}
+                      className="group flex flex-col border border-[#E5E7EB] rounded overflow-hidden hover:border-[#FF6B2C] transition-colors"
+                    >
+                      <div className="relative w-full bg-[#F3F4F6]" style={{ aspectRatio: '16/9' }}>
+                        {a.featuredImageUrl ? (
+                          <Image
+                            src={a.featuredImageUrl}
+                            alt={a.imageAlt ?? a.title}
+                            fill
+                            style={{ objectFit: 'cover' }}
+                            sizes="(max-width: 640px) 100vw, 33vw"
+                          />
+                        ) : (
+                          <EvergreenCardThumbnail evergreenData={a.evergreenData} sport={a.sport} label={EVERGREEN_LABEL[a.articleType] ?? 'Analysis'} articleType={a.articleType} />
+                        )}
+                      </div>
+                      <div className="p-4 flex flex-col flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <SportTag sport={a.sport} />
+                          <span className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider">
+                            {EVERGREEN_LABEL[a.articleType] ?? 'Analysis'}
+                          </span>
+                        </div>
+                        <h3 className="font-serif text-[15px] font-bold text-[#1A1A1A] leading-snug group-hover:text-[#FF6B2C] transition-colors line-clamp-2">
+                          {a.title}
+                        </h3>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </section>
             )}
 
             <div className="border-t border-b border-[#E5E7EB] py-4 mb-12 bg-[#F3F4F6]">

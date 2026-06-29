@@ -541,6 +541,164 @@ export async function fetchMlbTeamRecentRecord(
   }
 }
 
+export interface MlbDivisionStandings {
+  divisionName: string;
+  leagueName: string;
+  teams: MlbStandingsEntry[];
+}
+
+/**
+ * Fetch full standings for all 30 MLB teams, grouped by division.
+ * Used for power rankings and win-total tracker.
+ */
+export async function fetchAllMlbStandings(
+  season: number,
+): Promise<MlbDivisionStandings[]> {
+  try {
+    const resp = await axios.get(`${BASE}/standings`, {
+      params: { leagueId: '103,104', season, hydrate: 'team,division,league' },
+      timeout: 10000,
+    });
+
+    const data = safeGet(StandingsResponseSchema, resp.data);
+    if (!data) return [];
+
+    const divisions: MlbDivisionStandings[] = [];
+
+    for (const division of data.records ?? []) {
+      if (!division.teamRecords?.length) continue;
+
+      const firstEntry = division.teamRecords[0];
+      const divName = (firstEntry as Record<string, unknown>)['divisionRank']
+        ? String((firstEntry as Record<string, unknown>)['divisionRank'])
+        : '';
+
+      const teams: MlbStandingsEntry[] = [];
+      for (const entry of division.teamRecords) {
+        if (!entry.team?.id) continue;
+
+        const last10Split = entry.records?.splitRecords?.find((r) => r.type === 'lastTen');
+        const last10 = last10Split
+          ? `${last10Split.wins ?? 0}-${last10Split.losses ?? 0}`
+          : '';
+
+        teams.push({
+          teamId: entry.team.id,
+          teamName: entry.team.name ?? '',
+          wins: entry.wins ?? 0,
+          losses: entry.losses ?? 0,
+          winPct: entry.winningPercentage ?? '',
+          gamesBack: entry.gamesBack ?? '-',
+          wildCardBack: entry.wildCardGamesBack ?? '-',
+          streak: entry.streak?.streakCode ?? '',
+          last10,
+        });
+      }
+
+      const rawRec = division as unknown as Record<string, unknown>;
+      const divisionName =
+        (rawRec['division'] as Record<string, string> | undefined)?.nameShort ??
+        (rawRec['division'] as Record<string, string> | undefined)?.name ??
+        divName;
+      const leagueName =
+        (rawRec['league'] as Record<string, string> | undefined)?.name ?? '';
+
+      divisions.push({ divisionName: String(divisionName), leagueName: String(leagueName), teams });
+    }
+
+    return divisions;
+  } catch {
+    return [];
+  }
+}
+
+const LeagueLeaderSchema = z.object({
+  leagueLeaders: z.array(
+    z.object({
+      leaderCategory: z.string().optional(),
+      leaders: z.array(
+        z.object({
+          rank: z.number().optional(),
+          value: z.string().optional(),
+          person: z.object({ fullName: z.string().optional() }).optional(),
+          team: z.object({ name: z.string().optional() }).optional(),
+        }),
+      ).optional(),
+    }),
+  ).optional(),
+});
+
+export interface MlbLeagueLeader {
+  rank: number;
+  name: string;
+  team: string;
+  value: string;
+}
+
+export interface MlbLeagueLeaders {
+  battingAvg: MlbLeagueLeader[];
+  homeRuns: MlbLeagueLeader[];
+  rbi: MlbLeagueLeader[];
+  ops: MlbLeagueLeader[];
+  era: MlbLeagueLeader[];
+  strikeouts: MlbLeagueLeader[];
+  wins: MlbLeagueLeader[];
+  whip: MlbLeagueLeader[];
+}
+
+/**
+ * Fetch league-wide statistical leaders for use in evergreen articles.
+ */
+export async function fetchMlbLeagueLeaders(
+  season: number,
+  limit = 5,
+): Promise<MlbLeagueLeaders> {
+  const empty: MlbLeagueLeaders = {
+    battingAvg: [], homeRuns: [], rbi: [], ops: [],
+    era: [], strikeouts: [], wins: [], whip: [],
+  };
+  try {
+    const resp = await axios.get(`${BASE}/stats/leaders`, {
+      params: {
+        leaderCategories: 'battingAverage,homeRuns,runsBattedIn,onBasePlusSlugging,earnedRunAverage,strikeouts,wins,walksAndHitsPerInningPitched',
+        season,
+        leaderGameTypes: 'R',
+        sportId: 1,
+        limit,
+      },
+      timeout: 10000,
+    });
+
+    const data = safeGet(LeagueLeaderSchema, resp.data);
+    if (!data) return empty;
+
+    const extract = (category: string): MlbLeagueLeader[] =>
+      data.leagueLeaders
+        ?.find((l) => l.leaderCategory === category)
+        ?.leaders
+        ?.map((l, idx) => ({
+          rank: l.rank ?? idx + 1,
+          name: l.person?.fullName ?? '',
+          team: l.team?.name ?? '',
+          value: l.value ?? '',
+        }))
+        .filter((l) => l.name) ?? [];
+
+    return {
+      battingAvg: extract('battingAverage'),
+      homeRuns: extract('homeRuns'),
+      rbi: extract('runsBattedIn'),
+      ops: extract('onBasePlusSlugging'),
+      era: extract('earnedRunAverage'),
+      strikeouts: extract('strikeouts'),
+      wins: extract('wins'),
+      whip: extract('walksAndHitsPerInningPitched'),
+    };
+  } catch {
+    return empty;
+  }
+}
+
 /**
  * Map an ESPN team abbreviation to an MLB Stats API team ID.
  * Covers all 30 MLB teams.

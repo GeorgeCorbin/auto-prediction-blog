@@ -8,7 +8,7 @@ interface SiteHeaderProps {
 
 export function SiteHeader({ activeSport }: SiteHeaderProps) {
   const activeSports = getActiveSports();
-  const showCategoryNav = activeSports.length >= 2;
+  const showCategoryNav = activeSports.length >= 1;
 
   return (
     <header className="w-full border-b border-[#E5E7EB] bg-white">
@@ -57,6 +57,16 @@ export function SiteHeader({ activeSport }: SiteHeaderProps) {
                 </Link>
               );
             })}
+            <Link
+              href="/analysis"
+              className={`relative flex items-center h-11 px-4 text-[13px] font-medium whitespace-nowrap transition-colors ${
+                activeSport === 'analysis'
+                  ? 'text-[#FF6B2C] font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-[#FF6B2C]'
+                  : 'text-[#4B5563] hover:text-[#1A1A1A]'
+              }`}
+            >
+              Analysis
+            </Link>
           </div>
         </nav>
       )}

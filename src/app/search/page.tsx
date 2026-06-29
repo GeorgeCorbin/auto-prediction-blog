@@ -30,7 +30,8 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
 
 function getExcerpt(content: string, maxLength = 160): string {
   const first = content.split(/\n\n+/)[0]?.trim() ?? '';
-  return first.length <= maxLength ? first : first.slice(0, maxLength).trimEnd() + '…';
+  const clean = first.replace(/\*\*/g, '').replace(/[#*_~`]/g, '');
+  return clean.length <= maxLength ? clean : clean.slice(0, maxLength).trimEnd() + '…';
 }
 
 type SearchResult = Awaited<ReturnType<typeof searchArticles>>[number];
